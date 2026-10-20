@@ -3,9 +3,10 @@
 Usage: python tracer/tracer.py <program.py>
 
 See docs/trace-format.md for the output format.
-Fill in the TODOs one at a time and test on tests/programs/ after each.
+Remaining TODO: analyze_reads_writes() (needed for the Why Engine).
 """
 import ast
+import copy
 import io
 import json
 import sys
@@ -30,6 +31,35 @@ def analyze_reads_writes(code):
     return {}
 
 
+def snapshot(value):
+    """Copy a value as it is right now.
+
+    Storing the object itself would be wrong for lists/dicts: if the program
+    changes them later, every earlier step would show the new value too.
+    """
+    try:
+        return copy.deepcopy(value)
+    except Exception:
+        return repr(value)  # some objects (files, generators) can't be copied
+
+
+def snapshot_locals(frame):
+    """User-visible variables of one frame, skipping Python internals like __name__."""
+    return {name: snapshot(value)
+            for name, value in frame.f_locals.items()
+            if not name.startswith("__")}
+
+
+def build_stack(frame):
+    """Call stack from the outermost frame (<module>) to the current one."""
+    stack = []
+    while frame is not None and frame.f_code.co_filename == FILENAME:
+        stack.append({"func": frame.f_code.co_name, "locals": snapshot_locals(frame)})
+        frame = frame.f_back
+    stack.reverse()
+    return stack
+
+
 def trace(code):
     steps = []
     event_count = 0
@@ -45,13 +75,15 @@ def trace(code):
         if event_count > MAX_STEPS:
             raise StepLimitExceeded(f"Stopped after {MAX_STEPS} steps (infinite loop?)")
 
-        # TODO: append a step dict here (step, line, event, stack, stdout).
-        # Hints:
-        #   frame.f_lineno, frame.f_code.co_name, frame.f_locals
-        #   walk frame.f_back to build the stack (stop when it leaves FILENAME)
-        #   copy values -- f_locals changes as the program runs
-        #   skip names starting with "__"
-        #   output.getvalue() gives stdout so far
+        stack = build_stack(frame)
+        steps.append({
+            "step": len(steps) + 1,
+            "line": frame.f_lineno,  # for "line" events: the line about to run
+            "event": event,
+            "locals": stack[-1]["locals"],
+            "stack": stack,
+            "stdout": output.getvalue(),
+        })
         return tracer
 
     error = None
