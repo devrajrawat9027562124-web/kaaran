@@ -29,3 +29,10 @@ Kaaran is a debugging tutor for beginner programmers. Paste your code, step thro
 ```
 python tracer/tracer.py tests/programs/01_loop.py
 ```
+
+## Run the tests
+
+```
+python -m pip install pytest
+python -m pytest tests -v
+```
