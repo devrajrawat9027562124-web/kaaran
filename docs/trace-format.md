@@ -1,5 +1,7 @@
 # Trace format
 
+Every language adapter (Python now, C/C++ next, Java later) outputs this **same** format, so the UI and engines work for all languages without changes.
+
 The tracer outputs a JSON list of steps. Every module (visualizer, Why Engine, Diff Engine, quiz, explainer) reads this format, so change it only after agreeing as a team.
 
 ```json

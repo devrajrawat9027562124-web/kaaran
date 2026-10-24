@@ -3,7 +3,9 @@
 **Assumption:** about 16 weeks, one developer, ~12–15 hours/week. Change the weeks to fit your real deadline.
 Tick `[x]` as you finish tasks. A phase is done only when its **Done when** check passes.
 
-**Solo scope:** Core = Phases 1, 2, 3, 5 (simple), 8. The quiz, algorithm visuals and anything else are stretch goals.
+**Solo scope:** Core = Phases 1, 2 (Python), Phase C (C/C++ adapter), 8. Diff Engine, LLM explainer, quiz and visuals are stretch goals. Java is future work.
+
+**Languages:** design is language-independent (one trace format, one adapter per language). Python first, then C/C++ (shared GDB adapter).
 
 ---
 
@@ -24,7 +26,7 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 - **Stuck more than 2 hours?** Write down the exact problem, simplify it, or ask for help. Don't lose a week.
 
 ### Solo shortcuts (to save time)
-- **No backend until Phase 5.** Everything runs in the browser with Pyodide.
+- **No backend until Phase C.** Python runs entirely in the browser with Pyodide.
 - **Use a UI component library** (e.g. Tailwind + a ready component set) instead of designing your own.
 - **Simple animations first** (CSS transitions). Only use D3 if you need it.
 - **Deploy early** (GitHub Pages / Vercel in Week 5) so you always have a working demo link.
@@ -53,13 +55,13 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 - [ ] Handle `call` / `return` events (save return values)
 - [ ] Handle errors: show the error and its line
 - [ ] Support `input()`: take all input before the run
-- [ ] TODO 2: `analyze_reads_writes()` with `ast`
+- [ ] TODO 2: `analyze_reads_writes()` with `ast` (keep it behind a small function so it can be swapped for tree-sitter later, for C/C++)
 - [ ] Heap: track lists/dicts by `id()` (for aliasing)
 - [ ] `tests/test_tracer.py` with pytest, covering all test programs
 - [ ] Add 6 more test programs (nested loops, while, strings, dict, class, exception)
 
 ### Frontend (Week 4–5)
-- [ ] React app (Vite) + Monaco editor
+- [ ] React app (Vite) + Monaco editor, with a language dropdown (only Python enabled for now)
 - [ ] Pyodide in a **Web Worker**, running `tracer.py`
 - [ ] Stop the worker on timeout (infinite loop safety)
 - [ ] Step controls: Run, Next, Back, Play/Pause, step slider
@@ -91,7 +93,33 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 
 ---
 
-## Phase 3: Diff Engine, simple version (Week 9–10)
+## Phase C: C/C++ adapter (Week 9–12) [core]
+
+### Backend and sandbox (Week 9)
+- [ ] FastAPI backend with a `/trace` endpoint: `{language, code, input}` → trace JSON
+- [ ] Docker image with `gcc`, `g++`, `gdb`
+- [ ] Sandbox limits: no network, memory/CPU limits, time limit, non-root user, read-only filesystem except a temp folder
+- [ ] Frontend: send C/C++ code to the backend; Python still runs in the browser
+
+### Tracer (Week 10–11)
+- [ ] Compile with `gcc -g -O0` (`g++` for C++); show compile errors nicely
+- [ ] Drive GDB in machine-interface mode (GDB/MI): `-exec-next` / `-exec-step` until the program ends
+- [ ] At each step read: current line, stack frames, local variables
+- [ ] Output the **same trace JSON** as the Python tracer
+- [ ] Arrays: show values. Pointers: show the address + what it points to
+- [ ] Step limit and timeout (infinite loops), stdin input
+- [ ] Test programs in `tests/programs/c/` and `tests/programs/cpp/` (loop, if/else, function, recursion, array, pointer, infinite loop) + pytest tests
+
+### Why Engine for C/C++ (Week 12)
+- [ ] Use **tree-sitter** (C and C++ grammars) for reads/writes per line
+- [ ] Reuse the Python Why Engine on the C trace
+- [ ] Document limitations (pointer aliasing, `struct`s, library calls)
+
+**Done when:** all C/C++ test programs step correctly in the UI, and "Why?" works on loop and array programs.
+
+---
+
+## Phase 3: Diff Engine, simple version [stretch]
 
 - [ ] Input: student code + reference code + test input
 - [ ] Run both through the tracer
@@ -105,9 +133,9 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 
 ---
 
-## Phase 5: LLM Explainer, simple version (Week 11–12)
+## Phase 5: LLM Explainer, simple version [stretch]
 
-- [ ] Tiny backend (FastAPI on Render, or one serverless function) with `/explain`
+- [ ] Add an `/explain` endpoint to the existing FastAPI backend
 - [ ] API key in `.env` only (never in frontend or Git)
 - [ ] Prompt = code + trace window + slice; ask for JSON `{step, explanation, mentioned_values}`
 - [ ] Validator: every mentioned value must match the trace; flag it if not
@@ -124,7 +152,7 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 - [ ] Prepare 3 buggy programs for the study
 - [ ] Recruit 10–15 juniors; two groups (Kaaran vs print debugging / Python Tutor)
 - [ ] Measure: time to find the bug, success rate, short feedback form
-- [ ] Collect all numbers: tracer correctness, slice accuracy, diff accuracy, explainer accuracy
+- [ ] Collect all numbers: tracer correctness (Python and C/C++), slice accuracy, plus diff/explainer accuracy if built
 - [ ] Analyse results honestly, including where Kaaran did **worse**
 
 **Done when:** `docs/evaluation.md` has tables and charts for every metric.
@@ -142,8 +170,10 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 
 ---
 
-## Stretch goals (only if ahead of schedule)
+## Stretch goals (only if ahead of schedule, in this order)
 
+- [ ] Phase 3: Diff Engine (output comparison first)
+- [ ] Phase 5: LLM explainer
 - [ ] Phase 4: Prediction quiz + 2–3 misconception rules (copy vs alias, `range()` off-by-one)
 - [ ] Algorithm visuals: sorting bars, recursion tree
 - [ ] Complexity profiler
@@ -151,7 +181,8 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 ## Future work (mention in the report, don't build)
 
 - Full misconception engine, teacher dashboard, Hindi explanations
-- C support (GDB/MI + Docker, pointer and memory visuals), Java support
+- Java support (Java Debug Interface, same trace format)
+- Advanced C memory visuals (heap diagrams, use-after-free and out-of-bounds warnings)
 
 ---
 
@@ -163,9 +194,10 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 | 2–3 | 1 Tracer | Trace JSON correct on all test programs |
 | 4–5 | 1 UI | Step-through in browser, deployed; **checkpoint** |
 | 6–8 | 2 Why Engine | "Why?" works, accuracy measured; **checkpoint** |
-| 9–10 | 3 Diff Engine | Finds the first difference |
-| 11–12 | 5 LLM explainer | Explanations checked against the trace |
+| 9 | C Backend + sandbox | Docker runs C/C++ safely |
+| 10–11 | C Tracer | C/C++ step-through in the UI |
+| 12 | C Why Engine | "Why?" works for C/C++ |
 | 13–14 | 8 Evaluation | User study + metrics |
 | 15–16 | 9 Polish + report | Report, slides, video |
 
-**If you fall behind:** cut Phase 5, then simplify Phase 3 to output comparison only. Never cut Phases 1, 2 or 8.
+**If you fall behind:** cut the C/C++ Why Engine (keep step-through only), then reduce C/C++ to C only. Never cut Phases 1, 2 or 8.

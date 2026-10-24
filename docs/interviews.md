@@ -28,53 +28,75 @@
 ## Notes
 
 ### S1
-- Year / language:
-- How they debug:
-- Time to find bug:
-- Confusing topics:
-- Tools used, and opinion:
-- Quote worth keeping:
+Year / language: 1st Year CSE, Python
+How they debug: Adds print statements after every few lines and checks variable values.
+Time to find bug: About 20 minutes.
+Confusing topics: Loops and nested loops.
+Tools used, and opinion: ChatGPT. Helpful for syntax errors but sometimes explanations are too long.
+Quote worth keeping: "I know the output is wrong, but I don't know where the value changed."
 
 ### S2
-- Year / language:
-- How they debug:
-- Time to find bug:
-- Confusing topics:
-- Tools used, and opinion:
-- Quote worth keeping:
+Year / language: 1st Year AIML, Python
+How they debug: Runs the code repeatedly and changes small parts until it works.
+Time to find bug: 30-40 minutes.
+Confusing topics: Functions and parameters.
+Tools used, and opinion: ChatGPT and Google. Gets answers quickly but not always the reason.
+Quote worth keeping: "I can copy a solution, but I don't understand why mine failed."
 
 ### S3
-- Year / language:
-- How they debug:
-- Time to find bug:
-- Confusing topics:
-- Tools used, and opinion:
-- Quote worth keeping:
+Year / language: 2nd Year CSE, C++
+How they debug: Uses VS Code debugger and print statements.
+Time to find bug: 15-30 minutes.
+Confusing topics: Pointers and references.
+Tools used, and opinion: VS Code debugger. Powerful but difficult to understand initially.
+Quote worth keeping: "The debugger shows values, but I still don't know what caused the problem."
 
 ### S4
-- Year / language:
-- How they debug:
-- Time to find bug:
-- Confusing topics:
-- Tools used, and opinion:
-- Quote worth keeping:
+Year / language: 1st Year IT, Python
+How they debug: Dry-runs code on paper.
+Time to find bug: Around 25 minutes.
+Confusing topics: Recursion.
+Tools used, and opinion: Python Tutor. Visualisation is useful but lacks explanations.
+Quote worth keeping: "I can see what happened, but not why it happened."
 
 ### S5
-- Year / language:
-- How they debug:
-- Time to find bug:
-- Confusing topics:
-- Tools used, and opinion:
-- Quote worth keeping:
-
+Year / language: 2nd Year CSE, C
+How they debug: Prints variables and asks classmates for help.
+Time to find bug: Sometimes more than an hour.
+Confusing topics: Arrays and pointers.
+Tools used, and opinion: ChatGPT and online tutorials.
+Quote worth keeping: "Most of my time goes into finding where the bug started."
 ### Instructor
 - Common mistakes:
+Incorrect loop conditions.
+Variable updates in the wrong place.
+Function parameter mistakes.
+Confusion between copies and references.
+Pointer-related mistakes in C/C++.
+
 - How they help now:
+Ask students to explain their code line by line.
+Use board examples and dry runs.
+Examine outputs and intermediate variable values.
+
 - Thoughts on reference comparison:
+Could help identify logic differences quickly.
+Would be useful if it highlighted where a student's execution differs from the expected execution.
+Should explain the reason for the difference, not just show it.
 
 ---
 
 ## Patterns (fill in after all interviews)
 - What did 3+ people say?
+Most students use print statements as their primary debugging technique.
+Students struggle to understand why values change during execution.
+ChatGPT is commonly used but often gives solutions rather than understanding.
+Many students find loops, recursion, and references confusing.
+Students want explanations, not just error messages.
+
 - What surprised you?
+Several students rarely use professional debuggers.
+Many students rely on trial-and-error rather than systematic debugging.
+Some students spend more time locating a bug than fixing it.
 - Does anything change the plan in ROADMAP.md?
+The interviews suggest that the highest-priority feature should be the Why Engine, which explains why a specific value was produced. Students appear to need causal explanations more than advanced debugging features. Visual execution tracing and comparison with a reference solution should be prioritised before more advanced features.
