@@ -1,0 +1,7 @@
+# Kaaran backend (FastAPI). The C/C++ tracer itself runs in the sandbox
+# image, with its own requirements (runner/requirements.txt).
+fastapi==0.162.0
+uvicorn==0.54.0
+pydantic==2.14.1
+python-dotenv==1.2.4
+anthropic==2.3.0
