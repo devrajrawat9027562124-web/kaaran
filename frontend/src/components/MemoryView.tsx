@@ -4,6 +4,7 @@ import { frameLabel, objectLabel } from '../traceUtils'
 interface Props {
   step: Step
   frameIndex: number
+  previous: Step | null  // what was on the heap a step ago, to show what's new
 }
 
 interface Placed {
@@ -14,7 +15,7 @@ interface Placed {
 }
 
 const BOX_W = 128
-const BOX_H = 48
+const BOX_H = 56
 const GAP_X = 24
 const GAP_Y = 46
 const TOP = 40  // room for the variable names above the first row
@@ -50,14 +51,26 @@ function title(node: HeapObject): string {
   return node.type.replace(/^(struct|class|union)\s+/, '')
 }
 
-function body(node: HeapObject): string {
-  if (node.freed) return 'freed'
-  const fields = Object.entries(node.fields ?? {}).map(([k, v]) => `${k} = ${v}`)
-  const text = fields.length > 0 ? fields.join(', ') : node.value
-  return text.length > 20 ? `${text.slice(0, 19)}…` : text
+/**
+ * Up to two lines that fit in the box. A field that is drawn as an arrow
+ * isn't repeated as text, and empty pointers (None, NULL) come last.
+ */
+function body(node: HeapObject): string[] {
+  if (node.freed) return ['freed']
+  const arrows = new Set((node.edges ?? []).map((e) => e.label))
+  const empty = (v: string) => /^(None|NULL|nullptr|0x0)$/.test(v)
+  const fields = Object.entries(node.fields ?? {})
+    .filter(([k]) => !arrows.has(k))
+    .sort(([, a], [, b]) => Number(empty(a)) - Number(empty(b)))
+    .map(([k, v]) => `${k} = ${v}`)
+  // Lists and dicts have no plain fields: their value says it all
+  const lines = Object.keys(node.fields ?? {}).length > 0 ? fields : [node.value]
+  const fit = (text: string) => (text.length > 16 ? `${text.slice(0, 15)}…` : text)
+  if (lines.length > 2) return [fit(lines[0]), `${lines.length - 1} more fields`]
+  return lines.map(fit)
 }
 
-export function MemoryView({ step, frameIndex }: Props) {
+export function MemoryView({ step, frameIndex, previous }: Props) {
   // C: only malloc'd structs (a variable's own memory is in the variable list)
   const heap = Object.fromEntries(Object.entries(step.heap).filter(([, node]) => node.kind !== 'variable'))
   if (Object.keys(heap).length === 0) return null
@@ -78,9 +91,20 @@ export function MemoryView({ step, frameIndex }: Props) {
   const where = new Map(placed.map((p) => [p.id, p]))
   const px = (p: Placed) => 8 + p.x * (BOX_W + GAP_X)
   const py = (p: Placed) => TOP + p.y * (BOX_H + GAP_Y)
-  const width = 16 + columns * (BOX_W + GAP_X)
+  // A long name label is centred over its box but kept inside the picture
+  const labelText = (id: string) => {
+    const label = names.get(id) ?? []
+    return `${label.slice(0, 2).join(', ')}${label.length > 2 ? ' …' : ''}`
+  }
+  const halfLabel = (id: string) => labelText(id).length * 3.7 + 4  // 12px mono is about 7.4px a character
+  const labelX = (p: Placed) => Math.max(px(p) + BOX_W / 2, halfLabel(p.id))
+  const width = Math.max(16 + columns * (BOX_W + GAP_X), ...placed.map((p) => labelX(p) + halfLabel(p.id)))
   const height = TOP + rows * (BOX_H + GAP_Y)
   const isC = step.stack.some((f) => f.types)
+  // What this step added or changed, so it can be drawn in as it happens
+  const before = previous?.heap ?? null
+  const oldEdges = new Set(Object.entries(before ?? {}).flatMap(([id, node]) =>
+    (node.edges ?? []).map((e) => `${id}|${e.label}|${e.to}`)))
 
   return (
     <section className="panel" aria-labelledby="memory-heading">
@@ -108,9 +132,12 @@ export function MemoryView({ step, frameIndex }: Props) {
             const y1 = py(p) + (down ? BOX_H : BOX_H / 2)
             const x2 = px(to) + (down ? BOX_W / 2 : 0)
             const y2 = py(to) + (down ? 0 : BOX_H / 2)
+            const fresh = before !== null && !oldEdges.has(`${p.id}|${e.label}|${e.to}`)
             return (
               <g key={`${p.id}-${e.label}`}>
-                <line x1={x1} y1={y1} x2={x2} y2={y2} className="memory-edge" markerEnd="url(#arrow)" />
+                {/* pathLength 1 lets the CSS draw a new arrow from its start, whatever its length */}
+                <line x1={x1} y1={y1} x2={x2} y2={y2} className={fresh ? 'memory-edge drawing' : 'memory-edge'}
+                  pathLength={fresh ? 1 : undefined} markerEnd="url(#arrow)" />
                 <text x={(x1 + x2) / 2 + 4} y={(y1 + y2) / 2 - 2} className="memory-edge-label">{e.label}</text>
               </g>
             )
@@ -120,20 +147,24 @@ export function MemoryView({ step, frameIndex }: Props) {
             const classes = ['memory-node']
             if (p.node.freed) classes.push('freed')
             if (step.mutates.includes(p.id)) classes.push('changing')
+            const was = before?.[p.id]
+            if (was && (was.value !== p.node.value || was.freed !== p.node.freed)) classes.push('updated')
             return (
-              <g key={p.id}>
+              <g key={p.id} className={before !== null && !was ? 'memory-new' : undefined}>
                 {label && (
                   <>
-                    <text x={px(p) + BOX_W / 2} y={py(p) - 22} textAnchor="middle" className="memory-var">
-                      {label.slice(0, 2).join(', ')}{label.length > 2 ? ' …' : ''}
+                    <text x={labelX(p)} y={py(p) - 22} textAnchor="middle" className="memory-var">
+                      {labelText(p.id)}
                     </text>
                     <line x1={px(p) + BOX_W / 2} y1={py(p) - 16} x2={px(p) + BOX_W / 2} y2={py(p) - 2}
                       className="memory-edge" markerEnd="url(#arrow)" />
                   </>
                 )}
                 <rect x={px(p)} y={py(p)} width={BOX_W} height={BOX_H} rx={6} className={classes.join(' ')} />
-                <text x={px(p) + 8} y={py(p) + 18} className="memory-type">{title(p.node)}</text>
-                <text x={px(p) + 8} y={py(p) + 36} className="memory-body">{body(p.node)}</text>
+                <text x={px(p) + 8} y={py(p) + 16} className="memory-type">{title(p.node)}</text>
+                {body(p.node).map((line, i) => (
+                  <text key={i} x={px(p) + 8} y={py(p) + 33 + i * 15} className="memory-body">{line}</text>
+                ))}
               </g>
             )
           })}

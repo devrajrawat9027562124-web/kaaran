@@ -33,6 +33,74 @@ function capitalize(text: string): string {
   return sentence.endsWith('.') ? sentence : `${sentence}.`
 }
 
+/** Index of the next step in the same function call, or -1. */
+export function nextInFrame(trace: Trace, index: number): number {
+  const frameId = trace.steps[index].frame_id
+  for (let i = index + 1; i < trace.steps.length; i++) {
+    if (trace.steps[i].frame_id === frameId) return i
+  }
+  return -1
+}
+
+/** "set total = 3 (using i = 2, total = 1)" -> "set total = 3": short enough for a table cell. */
+export function shortNote(text: string): string {
+  return text.replace(/\s*\(using .*\)$/, '')
+}
+
+/** Function definitions and classes aren't values a dry run tracks. */
+export function isDefinition(value: string): boolean {
+  return /^(function|class|method|module) /.test(value)
+}
+
+/**
+ * C/C++ variables that the line at `index` declared without giving a value
+ * (`int choice;`), seen at the later step `after`. Until something sets them
+ * they hold whatever was in that memory, so a dry run writes "?" for them.
+ * In C++ only built-in types and pointers: a class (string, vector) is set
+ * by its constructor.
+ */
+export function declaredWithoutValue(trace: Trace, index: number, after: Step): string[] {
+  const step = trace.steps[index]
+  if (trace.language === 'python' || step.event !== 'line') return []
+  const before = step.stack.find((f) => f.frame_id === step.frame_id)
+  const now = after.stack.find((f) => f.frame_id === step.frame_id)
+  if (!before || !now) return []
+  const leftover = (type = '') => trace.language === 'c'
+    || /\*\s*$|^(const\s+)?((un)?signed\s+)?(char|short|int|long|float|double|bool|size_t)\b/.test(type)
+  return Object.keys(now.locals).filter((name) => !(name in before.locals) && !step.writes.includes(name)
+    && !step.mutates.includes(name) && leftover(now.types?.[name]))
+}
+
+/**
+ * What the line that just ran did, for showing next to it in the editor:
+ * "total: 1 → 3", "→ False", "printed 3". Null at the start.
+ */
+export function justRan(trace: Trace, narration: string[], index: number): { line: number; text: string } | null {
+  const now = trace.steps[index]
+  const before = now.event === 'line' ? previousInFrame(trace, index) : -1
+  if (before < 0 || trace.steps[before].event !== 'line') return null
+  const ran = trace.steps[before]
+  const old = ran.stack.find((f) => f.frame_id === ran.frame_id)?.locals ?? {}
+  const current = now.stack.find((f) => f.frame_id === ran.frame_id)?.locals ?? {}
+  const unset = declaredWithoutValue(trace, before, now)
+  const parts: string[] = []
+  for (const [name, value] of Object.entries(current)) {
+    if (old[name] !== value && !isDefinition(value)) {
+      parts.push(name in old ? `${name}: ${old[name]} → ${value}`
+        : unset.includes(name) ? `${name}: not set yet` : `${name} = ${value}`)
+    }
+  }
+  const note = narration[before] ?? ''
+  const condition = note.match(/condition was (True|False)/)
+  if (condition) parts.unshift(`→ ${condition[1]}`)
+  if (/went to the case on line \d+/.test(note)) parts.unshift(`→ ${note.match(/line \d+/)![0]}`)
+  const printed = now.stdout.slice(ran.stdout.length).trim()
+  if (printed) parts.push(`printed ${printed.length > 24 ? `${printed.slice(0, 23)}…` : printed}`)
+  if (parts.length === 0) return null
+  const text = parts.join('   ')
+  return { line: ran.line, text: text.length > 90 ? `${text.slice(0, 89)}…` : text }
+}
+
 /** Variables of a frame at its previous step, to spot what changed. */
 export function previousLocals(trace: Trace, index: number, frameId: number): Record<string, string> | null {
   for (let i = index - 1; i >= 0; i--) {

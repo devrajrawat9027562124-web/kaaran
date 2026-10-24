@@ -7,6 +7,8 @@ interface Props {
   step: Step
   frameIndex: number
   previous: Record<string, string> | null
+  previousStep: Step | null  // to animate only what this step changed
+  unset: string[]            // C/C++: declared without a value, so holding leftover memory
   asking: { name: string; frameIndex: number } | null
   onSelectFrame: (index: number) => void
   onWhy: (name: string, frameIndex: number) => void
@@ -51,8 +53,9 @@ function sharingNote(step: Step, frameIndex: number, name: string, holders: Map<
   return `${pointers.map(label).join(', ')} ${pointers.length > 1 ? 'point' : 'points'} here`
 }
 
-export function StatePanel({ step, frameIndex, previous, asking, onSelectFrame, onWhy, children }: Props) {
+export function StatePanel({ step, frameIndex, previous, previousStep, unset, asking, onSelectFrame, onWhy, children }: Props) {
   const frame = step.stack[frameIndex]
+  const oldFrames = new Set(previousStep?.stack.map((f) => f.frame_id) ?? [])
   const holders = holdersByObject(step)
   const names = Object.keys(frame.locals)
   const innermost = frameIndex === step.stack.length - 1
@@ -72,6 +75,8 @@ export function StatePanel({ step, frameIndex, previous, asking, onSelectFrame, 
               {names.map((name) => {
                 const value = frame.locals[name]
                 const changed = previous !== null && previous[name] !== value
+                const old = changed && previous && name in previous ? previous[name] : null
+                const isNew = changed && previous !== null && !(name in previous)
                 const note = sharingNote(step, frameIndex, name, holders)
                 const type = frame.types?.[name]
                 const isAsked = asking?.name === name && asking.frameIndex === frameIndex
@@ -82,7 +87,14 @@ export function StatePanel({ step, frameIndex, previous, asking, onSelectFrame, 
                       {type && <span className="var-type" title={type}>{shortType(type)}</span>}
                     </th>
                     <td>
+                      {old !== null && old.length <= 40 && (
+                        // The change itself, as a dry run on paper shows it: old value crossed out
+                        <><del className="was" title="Value before this line">{old}</del><span className="becomes" aria-label="became"> → </span></>
+                      )}
                       <code className="value">{value}</code>
+                      {isNew && (unset.includes(name)
+                        ? <span className="new-tag unset" title="Declared without a value, so it holds whatever was left in that memory">not set yet</span>
+                        : <span className="new-tag">new</span>)}
                       {note && (
                         <span className="shared" title="Changing the memory through one name changes it for the other">
                           {note}
@@ -117,7 +129,7 @@ export function StatePanel({ step, frameIndex, previous, asking, onSelectFrame, 
           <h2 id="stack-heading">Call stack</h2>
           <ol className="stack" reversed>
             {[...step.stack].map((f, i) => ({ f, i })).reverse().map(({ f, i }) => (
-              <li key={f.frame_id}>
+              <li key={f.frame_id} className={previousStep && !oldFrames.has(f.frame_id) ? 'entering' : undefined}>
                 <button
                   type="button"
                   className={i === frameIndex ? 'frame selected' : 'frame'}
@@ -135,7 +147,7 @@ export function StatePanel({ step, frameIndex, previous, asking, onSelectFrame, 
         </section>
       )}
 
-      <MemoryView step={step} frameIndex={frameIndex} />
+      <MemoryView step={step} frameIndex={frameIndex} previous={previousStep} />
     </>
   )
 }

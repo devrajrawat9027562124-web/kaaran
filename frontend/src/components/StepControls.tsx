@@ -1,12 +1,16 @@
 import type { Step } from '../types'
 
+export type Speed = 'slow' | 'normal' | 'fast'
+
 interface Props {
   index: number
   count: number
   step: Step
   playing: boolean
+  speed: Speed
   onGo: (index: number) => void
   onTogglePlay: () => void
+  onSpeed: (speed: Speed) => void
 }
 
 function where(step: Step, last: boolean): string {
@@ -17,7 +21,7 @@ function where(step: Step, last: boolean): string {
   return `line ${step.line} runs next`
 }
 
-export function StepControls({ index, count, step, playing, onGo, onTogglePlay }: Props) {
+export function StepControls({ index, count, step, playing, speed, onGo, onTogglePlay, onSpeed }: Props) {
   const atStart = index === 0
   const atEnd = index === count - 1
   return (
@@ -42,9 +46,19 @@ export function StepControls({ index, count, step, playing, onGo, onTogglePlay }
         onChange={(e) => onGo(Number(e.target.value))}
         aria-label="Step"
       />
-      <p className="position">
-        <strong>Step {index + 1}</strong> of {count}, {where(step, atEnd)}
-      </p>
+      <div className="position-row">
+        <p className="position">
+          <strong>Step {index + 1}</strong> of {count}, {where(step, atEnd)}
+        </p>
+        <label className="speed">
+          Play speed
+          <select value={speed} onChange={(e) => onSpeed(e.target.value as Speed)}>
+            <option value="slow">Slow</option>
+            <option value="normal">Normal</option>
+            <option value="fast">Fast</option>
+          </select>
+        </label>
+      </div>
     </div>
   )
 }

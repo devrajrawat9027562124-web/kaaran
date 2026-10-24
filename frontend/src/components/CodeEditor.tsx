@@ -10,6 +10,7 @@ export interface LineMarks {
   error?: number
   slice: number[]     // lines in the Why answer (blue ink)
   origins: number[]   // the direct causes
+  ran?: { line: number; text: string }  // what the line that just ran did, written after it
 }
 
 interface Props {
@@ -26,6 +27,7 @@ export function CodeEditor({ code, language, dark, marks, onChange }: Props) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
   const monacoRef = useRef<typeof Monaco | null>(null)
   const decorations = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null)
+  const currentLine = useRef<number | undefined>(undefined)
   const [loaded, setLoaded] = useState(false)
   const [mounted, setMounted] = useState(false)
 
@@ -59,7 +61,17 @@ export function CodeEditor({ code, language, dark, marks, onChange }: Props) {
     if (marks.previous !== marks.current) mark(marks.previous, 'mark-previous')
     mark(marks.current, 'mark-current', 'glyph-current', 'Runs next')
     mark(marks.error, 'mark-error', 'glyph-error', 'Error here')
+    if (marks.ran && marks.ran.line <= lineCount) {
+      // "total: 1 → 3" at the end of the line that did it, like a note on a printout
+      const end = editor.getModel()!.getLineMaxColumn(marks.ran.line)
+      list.push({
+        range: new monaco.Range(marks.ran.line, end, marks.ran.line, end),
+        // an empty range: Monaco drops its injected text unless showIfCollapsed is set
+        options: { showIfCollapsed: true, after: { content: `   ${marks.ran.text}`, inlineClassName: 'inline-change' } },
+      })
+    }
     decorations.current.set(list)
+    currentLine.current = marks.current
     if (marks.current) editor.revealLineInCenterIfOutsideViewport(marks.current)
   }, [marks, mounted, code])
 
@@ -75,6 +87,10 @@ export function CodeEditor({ code, language, dark, marks, onChange }: Props) {
         editorRef.current = editor
         monacoRef.current = monaco
         decorations.current = editor.createDecorationsCollection()
+        // A taller bottom panel shrinks the editor: keep the line about to run in view
+        editor.onDidLayoutChange(() => {
+          if (currentLine.current) editor.revealLineInCenterIfOutsideViewport(currentLine.current)
+        })
         setMounted(true)
       }}
       loading={<div className="editor-loading">Loading the editor…</div>}

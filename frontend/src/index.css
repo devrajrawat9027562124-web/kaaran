@@ -152,7 +152,10 @@ button.quiet:hover { color: var(--ink); }
 .controls-buttons .icon-button { flex: 0 0 40px; }
 .controls-buttons .play { font-weight: 700; border-color: var(--ink); color: var(--ink); }
 .slider { width: 100%; accent-color: var(--ink); }
+.position-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
 .position { font-size: 0.9375rem; color: var(--graphite-2); }
+.speed { display: flex; align-items: center; gap: 6px; font-size: 0.875rem; color: var(--graphite-2); }
+.speed select { min-height: 28px; padding: 0 6px; font-size: 0.875rem; }
 .position strong { color: var(--graphite); }
 
 .narration {
@@ -256,7 +259,7 @@ button.quiet:hover { color: var(--ink); }
 
 /* ---------- Editor line marks (Monaco decorations) ---------- */
 
-.mark-current { background: var(--highlighter-soft); }
+.mark-current { background: linear-gradient(var(--highlighter-soft), var(--highlighter-soft)) 0 0 / 100% 100% no-repeat; }
 .mark-previous { box-shadow: inset 3px 0 0 var(--rule-strong); }
 .mark-slice { background: var(--ink-soft); }
 .mark-origin { background: var(--ink-mid); }
@@ -312,20 +315,104 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
   background: var(--paper);
 }
 
-.dryrun-wrap { overflow: auto; }
-.dryrun { border-collapse: collapse; font-family: var(--mono); font-size: 0.875rem; }
-.dryrun th, .dryrun td { padding: 2px 12px; border: 1px solid var(--rule); text-align: left; white-space: nowrap; }
-.dryrun thead th { position: sticky; top: -10px; background: var(--paper-2); font-family: var(--font); }
-.col-func { color: var(--graphite-2); font-weight: 400; }
-.dryrun tbody tr { cursor: pointer; }
-.dryrun tr.in-slice td { background: var(--ink-soft); }
-.dryrun tr.current td { background: var(--highlighter-soft); }
+/* The dry-run table: the toolbar stays put, the table scrolls under its header */
+.dryrun-wrap { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; height: 100%; }
+.dryrun-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 0.875rem; }
+.dryrun-tools label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.dryrun-tools input { accent-color: var(--ink); }
+.dryrun-tools button { min-height: 28px; padding: 0 8px; }
+.dryrun-hint { margin-right: auto; color: var(--graphite-2); }
+.dryrun-scroll { overflow: auto; min-height: 0; }
+
+/* Separate borders, so the sticky header and columns keep theirs while scrolling */
+.dryrun { border-collapse: separate; border-spacing: 0; font-family: var(--mono); font-size: 0.875rem; }
+.dryrun th, .dryrun td {
+  padding: 2px 12px;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  white-space: nowrap;
+  background-color: var(--paper);
+}
+.dryrun thead th { position: sticky; top: 0; z-index: 2; background-color: var(--paper-2); font-family: var(--font); }
+.dryrun-groups th { height: 24px; padding-top: 0; padding-bottom: 0; font-size: 0.8125rem; font-weight: 400; color: var(--graphite-2); }
+.dryrun-groups th[scope] { border-bottom-color: var(--rule-strong); }
+.dryrun-groups + tr th { top: 24px; }
+.dryrun .sticky { position: sticky; left: 0; z-index: 1; min-width: 56px; max-width: 56px; }
+.dryrun .sticky.line-col { left: 56px; min-width: 48px; max-width: 48px; border-right-color: var(--rule-strong); }
+.dryrun thead th.sticky { z-index: 3; }
+.dryrun tbody tr { scroll-margin-top: 56px; }
+
+.dryrun .code-cell code { color: var(--graphite); }
+.dryrun tr.event-call .code-cell code, .dryrun tr.event-return .code-cell code { color: var(--ink); }
+.dryrun tr.event-exception .code-cell code { color: var(--red); }
+/* A loop starting another round gets a heavier rule, like a new block of the dry run on paper */
+.dryrun tr.new-round td { border-top: 2px solid var(--rule-strong); }
+.dryrun tr.future td { color: var(--graphite-2); }
+.dryrun tr.future .value-go, .dryrun tr.future .code-cell code { opacity: 0.55; }
+/* Tints are layered over the paper, so sticky cells stay opaque */
+.dryrun tr.in-slice td { background-image: linear-gradient(var(--ink-soft), var(--ink-soft)); }
+.dryrun tr.current td { background-image: linear-gradient(var(--highlighter-soft), var(--highlighter-soft)); }
 .dryrun .new-value { color: var(--ink); font-weight: 700; }
-.row-go { min-height: 0; padding: 0; border: 0; background: none; font: inherit; }
+.dryrun .same-value { color: var(--graphite-2); }
+.output-cell { color: var(--graphite); }
+.note-cell { font-family: var(--font); color: var(--graphite-2); }
+.row-go, .value-go { min-height: 0; padding: 0; border: 0; border-radius: 2px; background: none; font: inherit; color: inherit; }
+/* Long values and notes are cut short (table cells ignore max-width, so it goes on their content);
+   the full value is in the tooltip and the Why answer */
+.value-go, .note-cell span, .dryrun .code-cell code {
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+.value-go { max-width: 22ch; }
+.note-cell span { max-width: 40ch; }
+.dryrun .code-cell code { max-width: 48ch; }
+.value-go:hover { color: var(--ink); text-decoration: underline; }
+
+/* ---------- Motion: each change is drawn in as it happens, like marking a dry run by hand ---------- */
+
+/* Changed variables: the old value crossed out, the new one marked */
+.was { font-family: var(--mono); color: var(--graphite-2); text-decoration-color: var(--red); }
+.becomes { color: var(--graphite-2); }
+.new-tag {
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--highlighter-soft);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.new-tag.unset { background: var(--rule); color: var(--graphite-2); cursor: help; }
+.dryrun .unset-value { color: var(--graphite-2); font-weight: 700; }
+.vars tr.changed .value { background-repeat: no-repeat; background-size: 100% 100%; }
+.out-line.fresh { box-shadow: inset 3px 0 0 var(--highlighter); }
+/* What the line that just ran did, written after it in the editor */
+.inline-change { color: var(--ink); }
 
 @media (prefers-reduced-motion: no-preference) {
-  .vars tr.changed .value { transition: background 0.2s; }
+  .narration-text { display: block; animation: fade-in 0.3s ease-out; }
+  .mark-current { animation: highlighter 0.35s ease-out; }
+  .vars tr.changed .value { animation: highlighter 0.45s ease-out 0.05s backwards; }
+  .was { animation: fade-in 0.3s ease-out; }
+  .inline-change { animation: fade-in 0.4s ease-out; }
+  .out-line.fresh { animation: flash 1s ease-out; }
+  .stack li.entering { animation: push 0.3s ease-out; }
+  .memory-new { transform-box: fill-box; transform-origin: center; animation: pop-in 0.35s ease-out; }
+  .memory-edge.drawing { stroke-dasharray: 1; animation: draw 0.45s ease-out 0.15s backwards; }
+  .memory-node.updated { animation: node-flash 0.9s ease-out; }
+  .dryrun tr.appearing td { animation: flash 0.8s ease-out; }
 }
+
+@keyframes fade-in { from { opacity: 0; } }
+/* A highlighter stroke pulled across from the left */
+@keyframes highlighter { from { background-size: 0% 100%; } }
+@keyframes flash { from { background-color: var(--highlighter-soft); } }
+@keyframes push { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.6); } }
+@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes node-flash { from { fill: var(--highlighter); } }
 
 /* ---------- Explain this step (LLM, checked against the trace) ---------- */
 

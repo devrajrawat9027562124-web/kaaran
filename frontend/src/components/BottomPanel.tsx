@@ -14,10 +14,13 @@ interface Props {
   onStdin: (value: string) => void
   onGo: (index: number) => void
   onWhyOutput: (line: number) => void
+  narration: string[]
+  onWhyAt: (step: number, name: string, frameIndex: number) => void
   terminal?: ReactNode  // a live run of the program, when there is one
 }
 
-export function BottomPanel({ trace, index, tab, onTab: setTab, stdin, sliceSteps, onStdin, onGo, onWhyOutput, terminal }: Props) {
+export function BottomPanel({ trace, index, tab, onTab: setTab, stdin, sliceSteps, onStdin, onGo, onWhyOutput, narration,
+  onWhyAt, terminal }: Props) {
   const tabs: { id: Tab; label: string }[] = [
     ...(terminal ? [{ id: 'terminal' as Tab, label: 'Terminal' }] : []),
     { id: 'output', label: 'Output' },
@@ -26,7 +29,7 @@ export function BottomPanel({ trace, index, tab, onTab: setTab, stdin, sliceStep
   ]
 
   return (
-    <section className={tab === 'terminal' ? 'bottom tall' : 'bottom'}>
+    <section className={tab === 'terminal' || tab === 'table' ? 'bottom tall' : 'bottom'}>
       <div className="tabs" role="tablist" aria-label="Program output and input">
         {tabs.map((t) => (
           <button
@@ -56,7 +59,8 @@ export function BottomPanel({ trace, index, tab, onTab: setTab, stdin, sliceStep
           </label>
         )}
         {tab === 'table' && (
-          trace ? <DryRunTable trace={trace} index={index} sliceSteps={sliceSteps} onGo={onGo} />
+          trace ? <DryRunTable trace={trace} narration={narration} index={index} sliceSteps={sliceSteps} onGo={onGo}
+            onWhy={onWhyAt} />
             : <p className="empty">Run the program to fill in the dry-run table.</p>
         )}
       </div>
@@ -72,6 +76,9 @@ function Output({ trace, index, onWhyOutput }: { trace: Trace | null; index: num
   const lines = shown.split('\n')
   const complete = lines.slice(0, -1)
   const partial = lines[lines.length - 1]
+  // Lines printed by the step that just ran are marked, so new output stands out
+  const before = index > 0 ? trace.steps[index - 1].stdout : ''
+  const firstNew = before === shown ? complete.length + 1 : before.split('\n').length - 1
 
   return (
     <div className="output">
@@ -80,7 +87,8 @@ function Output({ trace, index, onWhyOutput }: { trace: Trace | null; index: num
       {shown !== '' && (
         <pre className="stdout">
           {complete.map((line, i) => (
-            <button type="button" key={i} className="out-line" onClick={() => onWhyOutput(i)}
+            <button type="button" key={i} className={i >= firstNew ? 'out-line fresh' : 'out-line'}
+              onClick={() => onWhyOutput(i)}
               title="Why was this printed?">
               {line || ' '}
             </button>

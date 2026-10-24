@@ -4,15 +4,18 @@ import { BottomPanel, type Tab } from './components/BottomPanel'
 import { CodeEditor, type LineMarks } from './components/CodeEditor'
 import { ExplainPanel, type ExplainState } from './components/ExplainPanel'
 import { StatePanel } from './components/StatePanel'
-import { StepControls } from './components/StepControls'
+import { StepControls, type Speed } from './components/StepControls'
 import { Terminal, type LiveSession } from './components/Terminal'
 import { WhyPanel } from './components/WhyPanel'
 import { EXAMPLES, defaultProgram } from './examples'
 import { PythonEngine, type EngineStatus } from './python/runner'
-import { explainFacts, guessLanguage, narrationFor, previousInFrame, previousLocals, readsInput } from './traceUtils'
+import {
+  declaredWithoutValue, explainFacts, guessLanguage, justRan, narrationFor, previousInFrame, previousLocals, readsInput,
+} from './traceUtils'
 import type { Language, Trace, WhyAnswer } from './types'
 
-const PLAY_DELAY_MS = 700
+// Play: time per step. Slow leaves time to read each change before the next one
+const PLAY_DELAY_MS: Record<Speed, number> = { slow: 1400, normal: 750, fast: 300 }
 const NO_EXPLANATION: ExplainState = { loading: false, result: null, error: null }
 
 // What the "input" examples read, so they work on the first Run
@@ -59,6 +62,7 @@ export default function App() {
   const [narration, setNarration] = useState<string[]>([])
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
+  const [speed, setSpeed] = useState<Speed>('normal')
   const [frameChoice, setFrameChoice] = useState<number | null>(null)
   const [stale, setStale] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
@@ -278,6 +282,24 @@ export default function App() {
     }
   }
 
+  /** Why from the dry-run table: go to the step where that value is shown, then ask. */
+  const askWhyAt = async (stepNumber: number, name: string, frame: number) => {
+    if (!engine.current) return
+    go(stepNumber - 1)
+    setFrameChoice(frame)
+    setAsking({ name, frameIndex: frame })
+    setWhyLoading(true)
+    setWhyError(null)
+    try {
+      setWhy(await engine.current.why(stepNumber, name, frame))
+    } catch (error) {
+      setWhy(null)
+      setWhyError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setWhyLoading(false)
+    }
+  }
+
   const askWhyOutput = async (line: number) => {
     if (!engine.current) return
     setAsking(null)
@@ -301,9 +323,9 @@ export default function App() {
     const timer = window.setTimeout(() => {
       if (index + 1 >= count - 1) setPlaying(false)
       go(index + 1)
-    }, PLAY_DELAY_MS)
+    }, PLAY_DELAY_MS[speed])
     return () => clearTimeout(timer)
-  }, [playing, index, count, go])
+  }, [playing, speed, index, count, go])
 
   // Arrow keys step through, unless typing in the editor or a text box
   useEffect(() => {
@@ -332,8 +354,9 @@ export default function App() {
       error: atEnd && trace.error_line ? trace.error_line : undefined,
       slice: why?.lines ?? [],
       origins,
+      ran: justRan(trace, narration, index) ?? undefined,
     }
-  }, [trace, step, index, count, why, stale])
+  }, [trace, narration, step, index, count, why, stale])
 
   const changeLanguage = (next: Language) => {
     // Keep the student's own code; only an untouched example is swapped for one in the new language
@@ -359,6 +382,11 @@ export default function App() {
     if (name.toLowerCase().includes('input')) setStdin(EXAMPLE_INPUT[language])
     if (name.toLowerCase().includes('menu')) setStdin(MENU_INPUT)
   }
+
+  // The line that just ran in the shown frame, and what it declared without a value (C/C++)
+  const ranIndex = trace && step?.event === 'line' ? previousInFrame(trace, index) : -1
+  const unset = trace && step && ranIndex >= 0 && trace.steps[ranIndex].frame_id === step.stack[frameIndex].frame_id
+    ? declaredWithoutValue(trace, ranIndex, step) : []
 
   const canRun = !busy && (language !== 'python' || status === 'ready')
   const statusText = {
@@ -420,6 +448,8 @@ export default function App() {
             onStdin={setStdin}
             onGo={go}
             onWhyOutput={askWhyOutput}
+            narration={narration}
+            onWhyAt={askWhyAt}
             terminal={live ? (
               <Terminal session={live} onSend={sendLine} onEndInput={endLiveInput} onStop={stopLive}
                 onExplain={explainLive} />
@@ -472,14 +502,19 @@ export default function App() {
           )}
           {trace && !stale && step && (
             <>
-              <StepControls index={index} count={count} step={step} playing={playing}
-                onGo={go} onTogglePlay={() => setPlaying((p) => !p)} />
-              <p className="narration" aria-live="polite">{narrationFor(trace, narration, index)}</p>
+              <StepControls index={index} count={count} step={step} playing={playing} speed={speed}
+                onGo={go} onTogglePlay={() => setPlaying((p) => !p)} onSpeed={setSpeed} />
+              <p className="narration" aria-live="polite">
+                {/* keyed by step, so each new sentence fades in */}
+                <span key={index} className="narration-text">{narrationFor(trace, narration, index)}</span>
+              </p>
               <ExplainPanel state={explanation} onExplain={explain} />
               <StatePanel
                 step={step}
                 frameIndex={frameIndex}
                 previous={index > 0 ? previousLocals(trace, index, step.stack[frameIndex].frame_id) : null}
+                previousStep={index > 0 ? trace.steps[index - 1] : null}
+                unset={unset}
                 asking={asking}
                 onSelectFrame={setFrameChoice}
                 onWhy={askWhy}
