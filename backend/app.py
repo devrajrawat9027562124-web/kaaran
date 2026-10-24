@@ -9,8 +9,11 @@ Python never comes here: it runs in the browser with Pyodide.
     POST /explain  the facts of one step (see ExplainRequest) -> explanation
 
 Accounts (optional: the tool works without one), see accounts.py:
-    POST /auth/signup {"name", "email", "password"} -> {"token", "user"}
-    POST /auth/login  {"email", "password"}         -> {"token", "user"}
+    POST /auth/signup {"name", "email", "password"} -> {"verify": true, ...}: a code is emailed
+    POST /auth/verify {"email", "code", "password"} -> {"token", "user"}
+    POST /auth/resend {"email", "password"}         -> {"wait"}: a new code
+    POST /auth/login  {"email", "password"}         -> {"token", "user"}, or {"verify": true, ...}
+                                                       for an email not confirmed yet
     POST /auth/logout, GET /auth/me                    (Authorization: Bearer <token>)
     GET/POST /programs, GET/PUT/DELETE /programs/{id}  the student's saved programs
     GET/POST /feedback                                 problems and ideas, and any reply
@@ -34,8 +37,9 @@ from pydantic import BaseModel, Field
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-import accounts  # noqa: E402  (all three read settings loaded above)
+import accounts  # noqa: E402  (these read settings loaded above)
 import explainer  # noqa: E402
+import mailer  # noqa: E402
 import sandbox  # noqa: E402
 
 MAX_CODE_CHARS = 20_000
@@ -126,6 +130,12 @@ class SignupRequest(BaseModel):
     password: str = Field(max_length=1000)
 
 
+class VerifyRequest(BaseModel):
+    email: str = Field(max_length=320)
+    code: str = Field(max_length=20)
+    password: str = Field(max_length=1000)
+
+
 class LoginRequest(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(max_length=1000)
@@ -172,7 +182,13 @@ def account_call(function, *args):
 
 @app.get("/health")
 def health():
-    return {"ok": True, "sandbox": sandbox.mode(), "explainer": explainer.available(), "accounts": True}
+    return {"ok": True, "sandbox": sandbox.mode(), "explainer": explainer.available(), "accounts": True,
+            "mail": mailer.mode()}
+
+
+if mailer.mode() == "console":
+    print("Kaaran: SMTP_HOST isn't set, so sign-up codes are printed in this window instead of emailed "
+          "(fine on your own computer; see backend/mailer.py to send real email).", flush=True)
 
 
 # ---------- Accounts and saved programs ----------
@@ -181,16 +197,28 @@ def health():
 def signup(body: SignupRequest, request: Request):
     if not auth_limiter.allow(client_address(request)):
         raise HTTPException(429, "Too many tries in a minute. Wait a little and try again.")
-    token, user = account_call(accounts.signup, body.name, body.email, body.password)
-    return {"token": token, "user": user}
+    return account_call(accounts.signup, body.name, body.email, body.password)
+
+
+@app.post("/auth/verify")
+def verify(body: VerifyRequest, request: Request):
+    if not auth_limiter.allow(client_address(request)):
+        raise HTTPException(429, "Too many tries in a minute. Wait a little and try again.")
+    return account_call(accounts.verify, body.email, body.code, body.password)
+
+
+@app.post("/auth/resend")
+def resend(body: LoginRequest, request: Request):
+    if not auth_limiter.allow(client_address(request)):
+        raise HTTPException(429, "Too many tries in a minute. Wait a little and try again.")
+    return account_call(accounts.resend, body.email, body.password)
 
 
 @app.post("/auth/login")
 def login(body: LoginRequest, request: Request):
     if not auth_limiter.allow(client_address(request)):
         raise HTTPException(429, "Too many tries in a minute. Wait a little and try again.")
-    token, user = account_call(accounts.login, body.email, body.password)
-    return {"token": token, "user": user}
+    return account_call(accounts.login, body.email, body.password)
 
 
 @app.post("/auth/logout", status_code=204)

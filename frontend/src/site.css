@@ -216,6 +216,18 @@
 .blank input:focus { outline: none; background-size: 100% 2px; }
 .blank input[aria-invalid] { border-bottom-color: var(--red); background-image: linear-gradient(var(--red), var(--red)); }
 .reveal { min-height: 30px; padding: 0 8px; font-size: 0.875rem; }
+/* The emailed code, written large in ink with room between the digits */
+.blank input.code-input { font-family: var(--mono); font-size: 1.75rem; letter-spacing: 0.45em; }
+.sent-to { overflow-wrap: anywhere; color: var(--graphite); }
+.link-button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+}
 .blank-hint { margin-top: 4px; font-size: 0.8125rem; color: var(--graphite-2); }
 /* Corrections in red pen, next to what they're about */
 .margin-note { margin-top: 6px; font-size: 0.875rem; color: var(--red); }

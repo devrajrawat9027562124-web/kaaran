@@ -10,13 +10,18 @@ Everything is in one SQLite file (KAARAN_DB, by default backend/kaaran.db).
   KAARAN_SESSION_DAYS days, and logging out deletes them.
 - A wrong email and a wrong password get the same answer, and take about the
   same time, so the login form doesn't reveal who has an account.
+- A new account must confirm its email: a 6-digit code is emailed (mailer.py)
+  and works for 10 minutes and 5 tries. Only its hash is stored. Confirming
+  also needs the account's password, so someone who signs up with another
+  person's email can't take the account over when that person types the code.
+  Emails to one account: one a minute, five an hour.
 
-Not here (known gaps for a classroom tool): email verification and password
-reset.
+Not here (a known gap for a classroom tool): password reset.
 """
 import base64
 import hashlib
 import hmac
+import math
 import os
 import re
 import secrets
@@ -25,11 +30,17 @@ import threading
 import time
 from contextlib import contextmanager
 
+import mailer
+
 # A relative path is inside the backend folder, wherever the server was started from
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.environ.get("KAARAN_DB") or "kaaran.db")
 SESSION_DAYS = float(os.environ.get("KAARAN_SESSION_DAYS", "14"))
 SCRYPT = {"n": 2 ** 14, "r": 8, "p": 5}
 MAX_PROGRAMS = 200
+CODE_MINUTES = 10        # an emailed code works this long
+RESEND_SECONDS = 60      # between two emails to one account
+MAX_SENDS_PER_HOUR = 5   # emails to one account in an hour
+MAX_ATTEMPTS = 5         # wrong codes before a code stops working
 LANGUAGES = ("python", "c", "cpp")
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -39,7 +50,17 @@ CREATE TABLE IF NOT EXISTS users (
     email    TEXT NOT NULL UNIQUE,
     name     TEXT NOT NULL,
     password TEXT NOT NULL,          -- scrypt$N$r$p$salt$hash
-    created  REAL NOT NULL
+    created  REAL NOT NULL,
+    verified INTEGER NOT NULL DEFAULT 0  -- 1 once the emailed code was entered
+);
+CREATE TABLE IF NOT EXISTS email_codes (
+    user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    code_hash    TEXT NOT NULL,      -- SHA-256, never the code itself
+    expires      REAL NOT NULL,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    sent         REAL NOT NULL,      -- when the last email went out
+    window_start REAL NOT NULL,      -- the hour that `sends` counts in
+    sends        INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,     -- SHA-256 of the token the browser holds
@@ -93,6 +114,10 @@ def connect():
     with _ready_lock:
         if DB_PATH not in _ready:
             db.executescript(SCHEMA)
+            if "verified" not in {row[1] for row in db.execute("PRAGMA table_info(users)")}:
+                # A database from before email codes: those accounts confirm at their next login
+                db.execute("ALTER TABLE users ADD COLUMN verified INTEGER NOT NULL DEFAULT 0")
+                db.commit()
             _ready.add(DB_PATH)
     return db
 
@@ -160,7 +185,11 @@ def _user(row):
 # ---------- Accounts ----------
 
 def signup(name, email, password):
-    """Create an account and log it in: (token, user)."""
+    """Create an account and email it a code: {"verify": True, "email", "wait"}.
+
+    An email that signed up before but was never confirmed can sign up again
+    (a typo in the password, a lost code): that replaces the name and password.
+    """
     name, email = " ".join(name.split()), email.strip().lower()
     if not name:
         raise AccountError(400, "Enter your name.")
@@ -173,25 +202,120 @@ def signup(name, email, password):
     if len(password) > 128:
         raise AccountError(400, "Use a password of at most 128 characters.")
     with _db() as db:
-        if db.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
+        row = db.execute("SELECT id, verified FROM users WHERE email = ?", (email,)).fetchone()
+        if row and row["verified"]:
             raise AccountError(409, "There's already an account with this email. Log in instead.")
-        try:
-            cursor = db.execute("INSERT INTO users (email, name, password, created) VALUES (?, ?, ?, ?)",
-                                (email, name, hash_password(password), time.time()))
-        except sqlite3.IntegrityError:  # the same email signed up a moment ago
-            raise AccountError(409, "There's already an account with this email. Log in instead.") from None
-        token = _new_session(db, cursor.lastrowid)
-        return token, {"id": cursor.lastrowid, "name": name, "email": email}
+        if row:
+            db.execute("UPDATE users SET name = ?, password = ? WHERE id = ?",
+                       (name, hash_password(password), row["id"]))
+            user_id = row["id"]
+        else:
+            try:
+                cursor = db.execute("INSERT INTO users (email, name, password, created) VALUES (?, ?, ?, ?)",
+                                    (email, name, hash_password(password), time.time()))
+            except sqlite3.IntegrityError:  # the same email signed up a moment ago
+                raise AccountError(409, "There's already an account with this email. Log in instead.") from None
+            user_id = cursor.lastrowid
+    return {"verify": True, "email": email, "wait": _send_code(user_id, email, name)}
 
 
 def login(email, password):
-    """(token, user) for a matching email and password."""
+    """{"token", "user"} for a matching email and password. For an account whose
+    email isn't confirmed yet, a code is emailed instead: {"verify": True, "email", "wait"}."""
     with _db() as db:
         row = db.execute("SELECT * FROM users WHERE email = ?", (email.strip().lower(),)).fetchone()
         ok = check_password(password, row["password"] if row else _NOBODY)
         if not row or not ok:
             raise AccountError(401, "That email and password don't match an account.")
-        return _new_session(db, row["id"]), _user(row)
+        if row["verified"]:
+            return {"token": _new_session(db, row["id"]), "user": _user(row)}
+    return {"verify": True, "email": row["email"], "wait": _send_code(row["id"], row["email"], row["name"])}
+
+
+# ---------- Confirming the email with a code ----------
+
+CODE_EMAIL = """Hello {name},
+
+Your Kaaran code is {code}
+
+Type it on the Kaaran page to confirm this is your email. It works for {minutes} minutes.
+
+If you didn't sign up for Kaaran, you can ignore this email: nobody can use
+the account without this code.
+"""
+
+
+def _code_hash(user_id, code):
+    return hashlib.sha256(f"{user_id}:{code}".encode()).hexdigest()
+
+
+def _send_code(user_id, email, name):
+    """Email a new code, unless one went out less than a minute ago.
+    Returns the seconds until another may be sent."""
+    now = time.time()
+    with _db() as db:
+        row = db.execute("SELECT * FROM email_codes WHERE user_id = ?", (user_id,)).fetchone()
+        if row and now - row["sent"] < RESEND_SECONDS:
+            return math.ceil(RESEND_SECONDS - (now - row["sent"]))
+        recent = row and now - row["window_start"] < 3600
+        window_start, sends = (row["window_start"], row["sends"]) if recent else (now, 0)
+        if sends >= MAX_SENDS_PER_HOUR:
+            raise AccountError(429, "Several codes have already been sent to this email in the last hour. "
+                                    "Use the newest one, or try again later.")
+        code = f"{secrets.randbelow(10 ** 6):06d}"
+        db.execute("INSERT OR REPLACE INTO email_codes "
+                   "(user_id, code_hash, expires, attempts, sent, window_start, sends) VALUES (?, ?, ?, 0, ?, ?, ?)",
+                   (user_id, _code_hash(user_id, code), now + CODE_MINUTES * 60, now, window_start, sends + 1))
+    try:
+        mailer.send(email, f"Your Kaaran code: {code}",
+                    CODE_EMAIL.format(name=name.split(" ")[0], code=code, minutes=CODE_MINUTES))
+    except mailer.MailError as e:
+        with _db() as db:  # nothing went out, so asking again needn't wait
+            db.execute("UPDATE email_codes SET sent = 0 WHERE user_id = ?", (user_id,))
+        raise AccountError(502, str(e)) from None
+    return RESEND_SECONDS
+
+
+def verify(email, code, password):
+    """Confirm the email with its code (and the account's password), and log in: {"token", "user"}."""
+    email, code = email.strip().lower(), re.sub(r"\D", "", code)  # "123 456" is fine
+    error, token = None, None
+    with _db() as db:
+        user = db.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        if user and user["verified"]:
+            raise AccountError(400, "This email is already confirmed. Log in.")
+        pending = user and db.execute("SELECT * FROM email_codes WHERE user_id = ?", (user["id"],)).fetchone()
+        if not pending or pending["expires"] < time.time():
+            raise AccountError(400, "That code has expired. Ask for a new one.")
+        right = hmac.compare_digest(pending["code_hash"], _code_hash(user["id"], code))
+        if right and check_password(password, user["password"]):
+            db.execute("UPDATE users SET verified = 1 WHERE id = ?", (user["id"],))
+            db.execute("DELETE FROM email_codes WHERE user_id = ?", (user["id"],))
+            token = _new_session(db, user["id"])
+        else:
+            # Counted here, then answered after the block: an error inside it would undo the count
+            attempts = pending["attempts"] + 1
+            if attempts >= MAX_ATTEMPTS:
+                db.execute("UPDATE email_codes SET expires = 0 WHERE user_id = ?", (user["id"],))
+                error = AccountError(429, "Too many wrong codes. Ask for a new one.")
+            else:
+                db.execute("UPDATE email_codes SET attempts = ? WHERE user_id = ?", (attempts, user["id"]))
+                left = MAX_ATTEMPTS - attempts
+                error = AccountError(400, f"That code isn't right. {left} {'try' if left == 1 else 'tries'} left.")
+    if error:
+        raise error
+    return {"token": token, "user": _user(user)}
+
+
+def resend(email, password):
+    """Email a new code to an account that isn't confirmed yet: {"wait"}."""
+    with _db() as db:
+        row = db.execute("SELECT * FROM users WHERE email = ?", (email.strip().lower(),)).fetchone()
+    if not row or not check_password(password, row["password"]):
+        raise AccountError(401, "That email and password don't match an account.")
+    if row["verified"]:
+        raise AccountError(400, "This email is already confirmed. Log in.")
+    return {"wait": _send_code(row["id"], row["email"], row["name"])}
 
 
 def user_for(token):
@@ -200,7 +324,8 @@ def user_for(token):
         return None
     with _db() as db:
         row = db.execute("SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id "
-                         "WHERE token_hash = ? AND expires > ?", (_token_hash(token), time.time())).fetchone()
+                         "WHERE token_hash = ? AND expires > ? AND users.verified = 1",
+                         (_token_hash(token), time.time())).fetchone()
         return _user(row) if row else None
 
 

@@ -54,11 +54,29 @@ export function storeToken(token: string | null) {
   }
 }
 
+/** The account's email isn't confirmed yet: a code was emailed. `wait`: seconds before another can be sent. */
+export interface CodeSent {
+  verify: true
+  email: string
+  wait: number
+}
+
+export function needsCode(result: Session | CodeSent): result is CodeSent {
+  return 'verify' in result
+}
+
 export const signup = (name: string, email: string, password: string) =>
-  request<Session>('POST', '/auth/signup', { what: WHAT, body: { name, email, password } })
+  request<CodeSent>('POST', '/auth/signup', { what: WHAT, body: { name, email, password } })
 
 export const login = (email: string, password: string) =>
-  request<Session>('POST', '/auth/login', { what: WHAT, body: { email, password } })
+  request<Session | CodeSent>('POST', '/auth/login', { what: WHAT, body: { email, password } })
+
+/** The emailed code, with the account's password (so nobody else can confirm it). */
+export const verifyEmail = (email: string, code: string, password: string) =>
+  request<Session>('POST', '/auth/verify', { what: WHAT, body: { email, code, password } })
+
+export const resendCode = (email: string, password: string) =>
+  request<{ wait: number }>('POST', '/auth/resend', { what: WHAT, body: { email, password } })
 
 export const logout = (token: string) => request<void>('POST', '/auth/logout', { what: WHAT, token })
 

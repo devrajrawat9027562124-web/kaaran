@@ -7,7 +7,8 @@ backend/
   app.py           FastAPI app: GET /health, POST /trace, POST /explain,
                    WS /run (a program running live, for the student to type into)
   sandbox.py       runs the tracer in a Docker container (or locally, for development)
-  accounts.py      optional student accounts and saved programs (SQLite, scrypt);
+  accounts.py      optional student accounts, saved programs, feedback (SQLite, scrypt);
+  mailer.py        sends the sign-up codes by email (SMTP, e.g. Gmail)
                    POST /auth/signup, /auth/login, /auth/logout, GET /auth/me,
                    GET/POST /programs, GET/PUT/DELETE /programs/{id}
   runner/          the C/C++ tracer, which runs inside the sandbox
@@ -61,6 +62,6 @@ Known gaps (fine for a classroom tool, not for a public service at scale): there
 
 ## Accounts
 
-Accounts are optional and stored in `backend/kaaran.db` (SQLite, created on first use, ignored by git; `KAARAN_DB` to move it). Passwords are kept only as salted scrypt hashes, and session tokens only as SHA-256 hashes; tokens last `KAARAN_SESSION_DAYS` (14). Logins and signups are limited to `AUTH_RATE_LIMIT` (10) a minute per address. There is no email verification or password reset. Details and trade-offs: `docs/design.md`, section 6.
+Accounts are optional and stored in `backend/kaaran.db` (SQLite, created on first use, ignored by git; `KAARAN_DB` to move it). Passwords are kept only as salted scrypt hashes, and session tokens only as SHA-256 hashes; tokens last `KAARAN_SESSION_DAYS` (14). Logins and signups are limited to `AUTH_RATE_LIMIT` (10) a minute per address. New accounts confirm their email with a 6-digit code (`mailer.py`; set `SMTP_*` in `.env`, or codes are printed in this terminal). There is no password reset yet. Details and trade-offs: `docs/design.md`, section 6.
 
 Don't share `kaaran.db`: it holds students' emails and their saved programs.

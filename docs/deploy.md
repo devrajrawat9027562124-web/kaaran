@@ -70,6 +70,16 @@ sudo install -d -o kaaran -g kaaran -m 700 /var/backups/kaaran
 
 In `nano`, check `ALLOWED_ORIGINS` is your Pages address, and add `ANTHROPIC_API_KEY` only if you want "Explain this step" (it's billed to you). Save with Ctrl+O, Enter, Ctrl+X. `KAARAN_SANDBOX` must stay `docker`: `local` would run students' code directly on the server.
 
+### Email for the sign-up codes
+
+New accounts confirm their email with a code, so the server must be able to send email. With Gmail:
+
+1. On the Gmail account Kaaran will send from, turn on **2-Step Verification** (Google Account → Security).
+2. Create an **App Password** (Google Account → Security → App passwords). Your normal password won't work.
+3. In `backend/.env` (`sudo nano backend/.env`): `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USER=` that Gmail address, `SMTP_PASSWORD=` the App Password, `MAIL_FROM="Kaaran <that address>"`.
+
+Google Cloud blocks outgoing port 25, but 587 works. A service like Brevo or SendGrid works the same way with its own SMTP settings. `curl http://127.0.0.1:8000/health` shows `"mail":"smtp"` once it's set.
+
 ## 5. Start the backend (and keep it running)
 
 ```

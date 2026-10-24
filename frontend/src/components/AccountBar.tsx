@@ -14,7 +14,8 @@ interface Props {
   step: number | null                          // the step being looked at, for feedback
   onSaved: (program: Program) => void
   onOpen: (program: Program) => void
-  onSignOut: () => void
+  onSignOut: () => void  // the session ended
+  onLogOut: () => void   // the Log out button
 }
 
 function initials(name: string): string {
@@ -25,7 +26,7 @@ function initials(name: string): string {
  * The top bar's account corner. Guests: Theme, Log in, Sign up. Logged in:
  * Save, My programs, and the profile menu (feedback, theme, log out).
  */
-export function AccountBar({ session, current, saved, step, onSaved, onOpen, onSignOut }: Props) {
+export function AccountBar({ session, current, saved, step, onSaved, onOpen, onSignOut, onLogOut }: Props) {
   const [dialog, setDialog] = useState<DialogMode | 'feedback' | null>(null)
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -86,7 +87,7 @@ export function AccountBar({ session, current, saved, step, onSaved, onOpen, onS
             <span className="menu-item-about">Report a problem with Kaaran or your program, or suggest something</span>
           </button>
           <ThemePicker />
-          <button type="button" className="menu-item" onClick={onSignOut}>
+          <button type="button" className="menu-item" onClick={onLogOut}>
             <span className="menu-item-label">Log out</span>
           </button>
         </div>

@@ -5,6 +5,7 @@ Run from the kaaran folder:   python -m pytest tests -v
 Skipped if FastAPI isn't installed (pip install -r backend/requirements.txt).
 """
 import os
+import re
 import sqlite3
 import sys
 
@@ -19,6 +20,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import accounts  # noqa: E402
 import app as backend  # noqa: E402
+import mailer  # noqa: E402
 
 ASHA = {"name": "Asha Rawat", "email": "Asha@Example.com", "password": "correct horse"}
 PROGRAM = {"title": "Average", "language": "python", "code": "print(1)\n", "input": ""}
@@ -36,13 +38,28 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(accounts, "DB_PATH", str(tmp_path / "kaaran.db"))
     backend.auth_limiter.seen.clear()
     backend.feedback_limiter.seen.clear()
-    return TestClient(backend.app)
+    test_client = TestClient(backend.app)
+    # Emails land here instead of being sent
+    test_client.mailbox = []
+    monkeypatch.setattr(mailer, "send", lambda to, subject, text: test_client.mailbox.append(
+        {"to": to, "subject": subject, "text": text}))
+    return test_client
+
+
+def code_in(mail):
+    return re.search(r"\b(\d{6})\b", mail["text"]).group(1)
 
 
 def signup(client, **changes):
-    response = client.post("/auth/signup", json={**ASHA, **changes})
+    """Sign up and confirm the email with the code it was sent: the session."""
+    fields = {**ASHA, **changes}
+    response = client.post("/auth/signup", json=fields)
     assert response.status_code == 201, response.text
-    return response.json()
+    assert response.json()["verify"] is True and "token" not in response.json()
+    confirmed = client.post("/auth/verify", json={"email": fields["email"], "code": code_in(client.mailbox[-1]),
+                                                  "password": fields["password"]})
+    assert confirmed.status_code == 200, confirmed.text
+    return confirmed.json()
 
 
 def auth(token):
@@ -51,7 +68,7 @@ def auth(token):
 
 # ---------- Accounts ----------
 
-def test_signup_logs_in_and_normalises_the_email(client):
+def test_signup_then_the_emailed_code_logs_in_and_normalises_the_email(client):
     body = signup(client)
     assert body["user"] == {"id": 1, "name": "Asha Rawat", "email": "asha@example.com"}
     assert client.get("/auth/me", headers=auth(body["token"])).json()["email"] == "asha@example.com"
@@ -82,6 +99,136 @@ def test_same_password_gets_a_different_hash():
 def test_signup_checks_its_fields(client, changes, message):
     response = client.post("/auth/signup", json={**ASHA, **changes})
     assert response.status_code == 400 and message in response.json()["detail"]
+
+
+# ---------- Confirming the email with a code ----------
+
+def start_signup(client, **changes):
+    response = client.post("/auth/signup", json={**ASHA, **changes})
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def confirm(client, code, email=ASHA["email"], password=ASHA["password"]):
+    return client.post("/auth/verify", json={"email": email, "code": code, "password": password})
+
+
+def test_signup_emails_a_code_and_gives_no_session_yet(client):
+    body = start_signup(client)
+    assert body == {"verify": True, "email": "asha@example.com", "wait": accounts.RESEND_SECONDS}
+    [mail] = client.mailbox
+    assert mail["to"] == "asha@example.com" and code_in(mail) in mail["subject"]
+    assert "Hello Asha" in mail["text"]
+
+
+def test_the_code_is_not_stored(client):
+    start_signup(client)
+    db = sqlite3.connect(accounts.DB_PATH)
+    (stored,) = db.execute("SELECT code_hash FROM email_codes").fetchone()
+    db.close()
+    assert code_in(client.mailbox[-1]) not in stored
+
+
+def test_an_unconfirmed_account_cant_log_in_until_it_enters_a_code(client):
+    start_signup(client)
+    client.mailbox.clear()
+    accounts.RESEND_SECONDS, saved = 0, accounts.RESEND_SECONDS  # let login send a fresh code at once
+    try:
+        response = client.post("/auth/login", json={"email": ASHA["email"], "password": ASHA["password"]})
+    finally:
+        accounts.RESEND_SECONDS = saved
+    assert response.status_code == 200 and response.json()["verify"] is True and "token" not in response.json()
+    assert len(client.mailbox) == 1
+    assert confirm(client, code_in(client.mailbox[-1])).status_code == 200
+
+
+def test_a_wrong_password_sends_no_code(client):
+    start_signup(client)
+    client.mailbox.clear()
+    response = client.post("/auth/login", json={"email": ASHA["email"], "password": "wrong password"})
+    assert response.status_code == 401 and client.mailbox == []
+
+
+def test_wrong_codes_count_down_then_stop_working(client):
+    start_signup(client)
+    right = code_in(client.mailbox[-1])
+    wrong = "000000" if right != "000000" else "111111"
+    answers = [confirm(client, wrong) for _ in range(accounts.MAX_ATTEMPTS)]
+    assert [a.status_code for a in answers] == [400] * (accounts.MAX_ATTEMPTS - 1) + [429]
+    assert "4 tries left" in answers[0].json()["detail"] and "1 try left" in answers[3].json()["detail"]
+    assert confirm(client, right).status_code == 400  # the right code no longer works either
+
+
+def test_an_expired_code_doesnt_work(client, monkeypatch):
+    monkeypatch.setattr(accounts, "CODE_MINUTES", -1)
+    start_signup(client)
+    response = confirm(client, code_in(client.mailbox[-1]))
+    assert response.status_code == 400 and "expired" in response.json()["detail"]
+
+
+def test_the_code_also_needs_the_accounts_password(client):
+    # Someone signing up with another person's email can't take over the account when
+    # that person types the code: confirming needs the password too
+    start_signup(client)
+    response = confirm(client, code_in(client.mailbox[-1]), password="someone else's password")
+    assert response.status_code == 400
+
+
+def test_resend_waits_a_minute_then_sends_a_new_code(client, monkeypatch):
+    start_signup(client)
+    first = code_in(client.mailbox[-1])
+    again = client.post("/auth/resend", json={"email": ASHA["email"], "password": ASHA["password"]})
+    assert again.status_code == 200 and 0 < again.json()["wait"] <= 60 and len(client.mailbox) == 1
+    monkeypatch.setattr(accounts, "RESEND_SECONDS", 0)
+    client.post("/auth/resend", json={"email": ASHA["email"], "password": ASHA["password"]})
+    assert len(client.mailbox) == 2
+    second = code_in(client.mailbox[-1])
+    if second != first:
+        assert confirm(client, first).status_code == 400  # only the newest code works
+    assert confirm(client, second).status_code == 200
+
+
+def test_at_most_five_emails_an_hour(client, monkeypatch):
+    monkeypatch.setattr(accounts, "RESEND_SECONDS", 0)
+    start_signup(client)
+    answers = [client.post("/auth/resend", json={"email": ASHA["email"], "password": ASHA["password"]})
+               for _ in range(5)]
+    assert [a.status_code for a in answers] == [200] * 4 + [429]
+    assert len(client.mailbox) == accounts.MAX_SENDS_PER_HOUR
+
+
+def test_an_unconfirmed_email_can_sign_up_again(client, monkeypatch):
+    # A typo in the password, or a lost code: signing up again starts over
+    monkeypatch.setattr(accounts, "RESEND_SECONDS", 0)
+    start_signup(client)
+    start_signup(client, password="a new password")
+    assert confirm(client, code_in(client.mailbox[-1]), password="a new password").status_code == 200
+
+
+def test_if_the_email_cant_be_sent_asking_again_works_at_once(client, monkeypatch):
+    def broken(to, subject, text):
+        raise mailer.MailError("The email couldn't be sent. Try again in a minute.")
+    monkeypatch.setattr(mailer, "send", broken)
+    response = client.post("/auth/signup", json=ASHA)
+    assert response.status_code == 502
+    monkeypatch.setattr(mailer, "send", lambda to, subject, text: client.mailbox.append({"text": text, "subject": subject}))
+    assert client.post("/auth/resend", json={"email": ASHA["email"], "password": ASHA["password"]}).status_code == 200
+    assert len(client.mailbox) == 1
+
+
+def test_accounts_from_before_email_codes_confirm_at_next_login(tmp_path, monkeypatch):
+    # An old database has no `verified` column: it's added, and those accounts aren't confirmed yet
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, "
+                "password TEXT NOT NULL, created REAL NOT NULL)")
+    old.execute("INSERT INTO users (email, name, password, created) VALUES ('old@example.com', 'Old', 'x', 0)")
+    old.commit()
+    old.close()
+    monkeypatch.setattr(accounts, "DB_PATH", str(path))
+    db = accounts.connect()
+    assert db.execute("SELECT verified FROM users").fetchone()[0] == 0
+    db.close()
 
 
 def test_one_account_per_email(client):

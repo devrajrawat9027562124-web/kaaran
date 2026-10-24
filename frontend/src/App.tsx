@@ -45,10 +45,11 @@ const toStdin = (lines: string[]) => lines.map((line) => `${line}\n`).join('')
 interface Props {
   active?: boolean               // false while another page of the site is shown (the tool stays loaded)
   session?: Session | null       // a logged-in student, who can save programs
-  onSignOut?: () => void
+  onSignOut?: () => void         // the session ended (stay on the page)
+  onLogOut?: () => void          // the student logged out (the site goes to its home page)
 }
 
-export default function App({ active = true, session = null, onSignOut = () => {} }: Props) {
+export default function App({ active = true, session = null, onSignOut = () => {}, onLogOut = onSignOut }: Props) {
   const { theme } = useTheme()
   const [language, setLanguage] = useState<Language>('python')
   const [code, setCode] = useState(() => defaultProgram('python'))
@@ -444,7 +445,7 @@ export default function App({ active = true, session = null, onSignOut = () => {
         <AccountBar session={session} current={{ language, code, input: stdin }} saved={saved}
           step={trace && !stale && step ? step.step : null}
           onSaved={(program) => setSaved({ id: program.id, title: program.title })} onOpen={openProgram}
-          onSignOut={onSignOut} />
+          onSignOut={onSignOut} onLogOut={onLogOut} />
       </header>
 
       <main className="workspace">

@@ -64,6 +64,13 @@ export function Site() {
     setSession(null)
   }, [])
 
+  // Logging out on purpose ends at the home page; a session that ended by itself
+  // (signOut alone) leaves the student where they were
+  const logOut = useCallback(() => {
+    signOut()
+    navigate('home')
+  }, [signOut])
+
   return (
     <>
       {route === 'home' && <Home user={session?.user ?? null} />}
@@ -71,7 +78,7 @@ export function Site() {
       {toolOpened && (
         <div hidden={route !== 'app'}>
           <Suspense fallback={<p className="page-loading">Opening Kaaran…</p>}>
-            <Workbench active={route === 'app'} session={session} onSignOut={signOut} />
+            <Workbench active={route === 'app'} session={session} onSignOut={signOut} onLogOut={logOut} />
           </Suspense>
         </div>
       )}
