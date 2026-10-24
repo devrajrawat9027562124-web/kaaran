@@ -151,6 +151,7 @@ class Explainer:
         prompt = build_prompt(facts)
         answer, model = self._ask(prompt)
         problems = validate(answer["mentioned_values"], facts)
+        first_attempt = {"mentioned": len(answer["mentioned_values"]), "wrong": len(problems)}
         retried = False
         if problems:
             retried = True
@@ -166,6 +167,7 @@ class Explainer:
             "verified": not problems,
             "problems": problems,
             "retried": retried,
+            "first_attempt": first_attempt,  # for measuring the validator's effect
             "model": model,
         }
         self.cache[key] = result

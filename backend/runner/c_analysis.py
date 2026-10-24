@@ -55,7 +55,8 @@ LOOPS = {"for_statement", "while_statement", "do_statement", "for_range_loop"}
 
 def analyze(code, language="c"):
     """Return {"lines": {line: info}, "declared": {function: {name: [lines]}},
-    "ends": {function: closing-brace line}, "functions": [names], "globals": [names]}."""
+    "starts"/"ends": {function: signature / closing-brace line},
+    "functions": [names], "globals": [names]}."""
     source = code.encode("utf-8")
     tree = Parser(LANGUAGES[language]).parse(source)
     analyzer = _Analyzer(source)
@@ -63,6 +64,7 @@ def analyze(code, language="c"):
     return {
         "lines": analyzer.lines,
         "declared": analyzer.declared,
+        "starts": analyzer.starts,
         "ends": analyzer.ends,
         "functions": sorted(analyzer.functions),
         "globals": sorted(analyzer.global_names),
@@ -83,6 +85,7 @@ class _Analyzer:
         self.source = source
         self.lines = {}
         self.declared = {}          # function -> {variable: [declaration lines]}
+        self.starts = {}            # function -> line of its signature
         self.ends = {}              # function -> line of its closing brace
         self.functions = set()
         self.global_names = set()
@@ -143,6 +146,7 @@ class _Analyzer:
         # The closing brace: the tracer finishes the function from there,
         # which is how GDB reports the value it returns
         for name in {self.func, self.func.split("::")[-1]}:
+            self.starts[name] = _line(node)
             self.ends[name] = node.end_point[0] + 1
         self.locals = set()
         declared = self.declared.setdefault(self.func, {})

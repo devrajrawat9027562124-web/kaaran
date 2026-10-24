@@ -187,15 +187,15 @@ class Stepper:
         gdb.command("-exec-run")
 
     def _next_command(self):
-        """Step to the next line; at a function's closing brace, finish it
+        """Step to the next line; once a function is leaving, finish it
         instead, which is how GDB reports the value it returns."""
-        if len(self.frames) > 1:
-            frame = self.frames[-1]
-            ends = self.analysis["ends"]
-            end = ends.get(frame.func) or ends.get(frame.func.split("::")[-1])
-            if frame.returning or frame.current == end:
-                return "-exec-finish"
+        if len(self.frames) > 1 and self.frames[-1].returning:
+            return "-exec-finish"
         return "-exec-step"
+
+    def _end_line(self, frame):
+        ends = self.analysis["ends"]
+        return ends.get(frame.func) or ends.get(frame.func.split("::")[-1])
 
     def _stop_early(self, message, line=None):
         self.result["error"] = message
@@ -238,7 +238,7 @@ class Stepper:
             value = None
         if (returned or back_mid_line) and self.frames and line == self.frames[-1].current:
             return True  # back in the middle of a line that hasn't finished: it continues
-        if depth == len(self.frames) and self.frames and self.frames[-1].on_return:
+        if depth == len(self.frames) and self.frames and (self.frames[-1].on_return or self.frames[-1].returning):
             # Its return statement has finished (a `return f(x);` line first
             # runs the call). What's left is cleanup, such as destructors
             # freeing memory, so the values are no longer meaningful.
@@ -247,6 +247,11 @@ class Stepper:
         if depth > len(self.frames):
             for frame in user[:depth - len(self.frames)][::-1]:
                 self._push(frame, stop)
+        if line == self._end_line(self.frames[-1]):
+            # The closing brace isn't a statement: the function is leaving
+            # (finish it; for main, the program is ending)
+            self.frames[-1].returning = True
+            return True
         self._record_line(line, user)
         return True
 
@@ -266,7 +271,10 @@ class Stepper:
         args = [a["name"] for a in stop.get("frame", {}).get("args", [])]
         stack, heap = self._snapshot()
         number = len(self.steps) + 1
-        self.steps.append(self._step(number, frame.entry_line, "call", frame, stack, heap, writes=args,
+        # Like Python's call event, the call is shown on the function's first line
+        starts = self.analysis["starts"]
+        line = starts.get(frame.func) or starts.get(frame.func.split("::")[-1]) or frame.entry_line
+        self.steps.append(self._step(number, line, "call", frame, stack, heap, writes=args,
                                      control_parent=self.last_line_step.get(caller.frame_id)))
         self.call_step[frame.frame_id] = number
 

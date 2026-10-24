@@ -35,6 +35,14 @@ jobs:
       - run: python -m pytest tests/test_c_analysis.py tests/test_c_tracer.py -v
         env:
           KAARAN_REQUIRE_GDB: "1"
+      # The evaluation scripts on Linux; their summaries appear on the run's page
+      - name: Evaluation (slice accuracy, tracer correctness)
+        run: |
+          python evaluation/slicing/score.py > /dev/null
+          python evaluation/tracer_correctness.py > /dev/null
+          echo "::notice title=Slice accuracy (Linux)::$(grep -m1 'cases\*\*' evaluation/slicing/results.md)"
+          echo "::notice title=Tracer correctness (Linux)::$(grep -m1 'programs\*\*' evaluation/tracer_correctness.md)"
+          echo "::notice title=Tracer differences (Linux)::$(grep -c '| NO |' evaluation/tracer_correctness.md || true) programs differ"
 
   sandbox:
     name: Docker sandbox

@@ -28,6 +28,7 @@ class WhyEngine:
         self.mutators = {}       # object id -> steps that changed it, in order
         self.next_in_frame = {}  # step -> next step in the same frame
         self.controlled = {}     # step -> steps whose control_parent it is
+        self.child_returns = {}  # line step -> returns of the calls it made
         self._build()
 
     # ---------- Building the graph ----------
@@ -55,8 +56,12 @@ class WhyEngine:
                 if fid in last_line:  # the return statement (or the failing line)
                     deps.add(last_line[fid])
                 if event == "return" and caller_of.get(fid) in last_line:
-                    # the caller's line uses the returned value
-                    self.deps[last_line[caller_of[fid]]].add(n)
+                    caller_line = last_line[caller_of[fid]]
+                    self.child_returns.setdefault(caller_line, []).append(n)
+                    if step.get("return_value", "None") != "None":
+                        # the caller's line uses the returned value (a void
+                        # function or None gives the caller nothing to use)
+                        self.deps[caller_line].add(n)
 
             for name in step.get("reads", ()):
                 deps.update(self._sources(step, name, n))
@@ -343,8 +348,7 @@ class WhyEngine:
     def _printed(self, n):
         """Output written by line n itself: before its first call, and after
         each call it made returned (not what the called functions printed)."""
-        own = [n] + [d for d in sorted(self.deps[n])
-                     if d > n and self.steps[d]["event"] == "return"]
+        own = [n] + self.child_returns.get(n, [])
         text = ""
         for start in own:
             if start + 1 in self.steps:

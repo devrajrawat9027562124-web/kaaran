@@ -45,6 +45,8 @@ def program(path):
 
 def check(name, condition, detail):
     print(f"{'ok  ' if condition else 'FAIL'} {name}: {detail}")
+    if os.environ.get("GITHUB_ACTIONS"):  # also show it on the CI run's summary
+        print(f"::notice title=Sandbox: {name}::{'ok' if condition else 'FAIL'}: {detail}")
     return condition
 
 
