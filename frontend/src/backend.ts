@@ -37,3 +37,56 @@ export function traceOnBackend(language: Language, code: string, stdin: string):
 export function explainStep(facts: ExplainFacts): Promise<ExplainResult> {
   return post<ExplainResult>('/explain', facts, 'Explanations are written')
 }
+
+export interface LiveHandlers {
+  onCompiled: () => void
+  onOutput: (text: string) => void
+  onCompileError: (message: string, line: number | null) => void
+  onExit: (result: { code?: number | null; signal?: string | null; message?: string | null; stopped?: boolean }) => void
+  onError: (message: string) => void
+}
+
+export interface LiveControl {
+  send: (line: string) => void
+  endInput: () => void
+  stop: () => void
+}
+
+/** Run a C/C++ program live on the backend: its output streams in, typed lines go to it. */
+export function liveRun(language: Language, code: string, handlers: LiveHandlers): LiveControl {
+  const socket = new WebSocket(`${BACKEND_URL.replace(/^http/, 'ws')}/run`)
+  let finished = false
+  socket.onopen = () => socket.send(JSON.stringify({ type: 'start', language, code }))
+  socket.onmessage = (event) => {
+    const message = JSON.parse(event.data)
+    if (message.type === 'compiled') handlers.onCompiled()
+    else if (message.type === 'output') handlers.onOutput(message.data)
+    else if (message.type === 'compile_error') {
+      finished = true
+      handlers.onCompileError(message.compile_output || message.error, message.error_line ?? null)
+    } else if (message.type === 'exit') {
+      finished = true
+      handlers.onExit(message)
+    } else if (message.type === 'error') {
+      finished = true
+      handlers.onError(message.message)
+    }
+  }
+  socket.onerror = () => {
+    if (!finished) {
+      finished = true
+      handlers.onError(
+        `C and C++ run on the Kaaran backend, and it isn't reachable at ${BACKEND_URL}. ` +
+          'Start it from the backend folder (see the README), then try again.',
+      )
+    }
+  }
+  const sendJson = (data: object) => {
+    if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data))
+  }
+  return {
+    send: (line) => sendJson({ type: 'input', data: `${line}\n` }),
+    endInput: () => sendJson({ type: 'eof' }),
+    stop: () => sendJson({ type: 'stop' }),
+  }
+}

@@ -1,7 +1,8 @@
+import type { ReactNode } from 'react'
 import type { Trace } from '../types'
 import { DryRunTable } from './DryRunTable'
 
-export type Tab = 'output' | 'input' | 'table'
+export type Tab = 'terminal' | 'output' | 'input' | 'table'
 
 interface Props {
   trace: Trace | null
@@ -13,17 +14,19 @@ interface Props {
   onStdin: (value: string) => void
   onGo: (index: number) => void
   onWhyOutput: (line: number) => void
+  terminal?: ReactNode  // a live run of the program, when there is one
 }
 
-export function BottomPanel({ trace, index, tab, onTab: setTab, stdin, sliceSteps, onStdin, onGo, onWhyOutput }: Props) {
+export function BottomPanel({ trace, index, tab, onTab: setTab, stdin, sliceSteps, onStdin, onGo, onWhyOutput, terminal }: Props) {
   const tabs: { id: Tab; label: string }[] = [
+    ...(terminal ? [{ id: 'terminal' as Tab, label: 'Terminal' }] : []),
     { id: 'output', label: 'Output' },
     { id: 'input', label: stdin.trim() ? 'Input (given)' : 'Input' },
     { id: 'table', label: 'Dry-run table' },
   ]
 
   return (
-    <section className="bottom">
+    <section className={tab === 'terminal' ? 'bottom tall' : 'bottom'}>
       <div className="tabs" role="tablist" aria-label="Program output and input">
         {tabs.map((t) => (
           <button
@@ -41,12 +44,13 @@ export function BottomPanel({ trace, index, tab, onTab: setTab, stdin, sliceStep
         ))}
       </div>
       <div className="tab-body" role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
+        {tab === 'terminal' && terminal}
         {tab === 'output' && <Output trace={trace} index={index} onWhyOutput={onWhyOutput} />}
         {tab === 'input' && (
           <label className="stdin">
             <span>
               Everything your program reads with <code>input()</code> or <code>scanf</code>, one line per read.
-              Press Run again after changing it.
+              Leave it empty to type the input while the program runs instead.
             </span>
             <textarea value={stdin} onChange={(e) => onStdin(e.target.value)} rows={4} spellCheck={false} />
           </label>

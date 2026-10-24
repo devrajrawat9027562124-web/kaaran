@@ -4,12 +4,14 @@ Python programs never come here: they run in the browser. The backend traces **C
 
 ```
 backend/
-  app.py           FastAPI app: GET /health, POST /trace
+  app.py           FastAPI app: GET /health, POST /trace, POST /explain,
+                   WS /run (a program running live, for the student to type into)
   sandbox.py       runs the tracer in a Docker container (or locally, for development)
   runner/          the C/C++ tracer, which runs inside the sandbox
     c_tracer.py    compile with -g -O0, step with GDB, write the trace JSON
     c_analysis.py  reads/writes/control per line, with tree-sitter
     mi.py          talks to GDB through its machine interface (GDB/MI)
+    run_program.py compiles and runs a program live (the Terminal), before it is explained
     Dockerfile     the sandbox image: Debian, gcc, g++, gdb, python3
 ```
 

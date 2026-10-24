@@ -12,7 +12,7 @@ COPY requirements.txt /app/requirements.txt
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir -r /app/requirements.txt
 
-COPY c_analysis.py c_tracer.py mi.py /app/
+COPY c_analysis.py c_tracer.py mi.py run_program.py /app/
 
 RUN useradd --uid 10001 --create-home runner
 USER 10001

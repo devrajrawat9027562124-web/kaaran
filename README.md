@@ -18,7 +18,7 @@ Kaaran is a debugging tutor for beginner programmers. Paste a program, step thro
   - "changed x through p: p points to x"
   - "the condition was False (using n = 4)"
 - **Memory view**: linked lists, trees and objects drawn as boxes and arrows (a BST in sorted order), with freed memory marked. It works for `malloc`'d structs in C and objects in Python.
-- **Menu-driven programs**: type the menu choices in the Input tab (one per line). If a program asks for more input than you gave, Kaaran says so instead of reporting an endless loop.
+- **Programs that read input (`scanf`, `input()`, menus)**: press Run and the program first runs in the **Terminal**, like a normal compiled program: you type each value when it asks. When it finishes, Kaaran explains exactly that run, with your input. (Or give all the input up front in the Input tab.)
 - **Dry-run table**: the trace table students draw on paper, one row per line run, new values only.
 - **Explain this step** (optional): Claude explains the step in plain words. Every value it mentions is checked against the trace, and wrong ones are flagged.
 - **Safe by design:** Python runs in the browser (Pyodide) and endless programs are stopped. C/C++ runs in a locked-down Docker container.

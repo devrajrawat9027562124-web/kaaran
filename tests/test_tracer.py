@@ -217,3 +217,29 @@ def test_heap_objects_have_labelled_links():
     head = last["heap"][refs["head"]]
     assert head["fields"] == {"value": "1"}
     assert head["edges"] == [{"label": "next", "to": last["heap"][refs["head"]]["children"][0]}]
+
+
+# ---------- Live runs: the student types, then the run is explained ----------
+
+def test_live_run_waits_for_each_line():
+    from tracer import run_live
+    with open(os.path.join(ROOT, "tests", "programs", "13_input.py"), encoding="utf-8") as f:
+        code = f.read()
+    first = run_live(code, "")
+    assert first["status"] == "input" and first["stdout"] == "Name: "
+    second = run_live(code, "Asha\n")
+    assert second["status"] == "input" and second["stdout"].endswith("Age: ")
+    done = run_live(code, "Asha\n19\n")
+    assert done["status"] == "done" and done["stdout"].endswith("Asha will be 20 next year\n")
+
+
+def test_live_run_end_of_input():
+    from tracer import run_live
+    result = run_live("x = input()\ny = input()\n", "5\n", eof=True)
+    assert result["status"] == "done" and result["error"].startswith("EOFError")
+
+
+def test_same_seed_same_random_numbers_in_live_run_and_trace():
+    from tracer import run_live
+    game = "import random\nsecret = random.randint(1, 100)\nguess = int(input())\nprint(secret, guess)\n"
+    assert run_live(game, "50\n", seed=1234)["stdout"] == trace(game, "50\n", seed=1234)["stdout"]

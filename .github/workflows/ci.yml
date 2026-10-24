@@ -31,8 +31,8 @@ jobs:
           python-version: "3.14"
       - run: sudo apt-get update && sudo apt-get install -y gdb
       - run: gcc --version && gdb --version
-      - run: pip install -r backend/runner/requirements.txt pytest==9.1.1 pytest-github-actions-annotate-failures==0.4.2
-      - run: python -m pytest tests/test_c_analysis.py tests/test_c_tracer.py -v
+      - run: pip install -r backend/runner/requirements.txt -r backend/requirements.txt pytest==9.1.1 httpx==0.28.1 pytest-github-actions-annotate-failures==0.4.2
+      - run: python -m pytest tests/test_c_analysis.py tests/test_c_tracer.py tests/test_live_run.py -v
         env:
           KAARAN_REQUIRE_GDB: "1"
       # The evaluation scripts on Linux; their summaries appear on the run's page

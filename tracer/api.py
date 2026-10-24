@@ -6,17 +6,23 @@ about it without sending it again.
 """
 import json
 
-from tracer import MAX_STEPS, trace
+from tracer import MAX_STEPS, run_live as run_program_live, trace
 from why import WhyEngine
 
 _engine = None
 
 
-def run(code, stdin="", max_steps=MAX_STEPS):
-    """Trace a Python program and keep it for later questions."""
-    result = trace(code, stdin, max_steps)
+def run(code, stdin="", max_steps=MAX_STEPS, seed=-1):
+    """Trace a Python program and keep it for later questions.
+    seed < 0 means no fixed seed (JavaScript passes a number)."""
+    result = trace(code, stdin, max_steps, seed if seed >= 0 else None)
     _keep(result)
     return json.dumps(result)
+
+
+def run_live(code, stdin="", seed=-1, eof=0):
+    """Run a program for the student to type into (see tracer.run_live)."""
+    return json.dumps(run_program_live(code, stdin, seed if seed >= 0 else None, bool(eof)))
 
 
 def load(trace_json):

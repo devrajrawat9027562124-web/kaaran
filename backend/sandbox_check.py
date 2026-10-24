@@ -73,6 +73,18 @@ def main():
     results.append(check("No writing outside /tmp", "write:no" in t["stdout"], repr(t["stdout"])))
     results.append(check("No network", "net:no" in t["stdout"], repr(t["stdout"])))
 
+    # A live run: type into a menu program in the container, as the Terminal does
+    start = time.time()
+    run = sandbox.LiveRun("c", program("c/13_menu.c"))
+    status = run.proc.stdout.readline().decode("utf-8", "replace")
+    run.write("1\n5\n1\n7\n2\n3\n")
+    output = run.proc.stdout.read().decode("utf-8", "replace")
+    errors = run.proc.stderr.read().decode("utf-8", "replace")
+    run.stop()
+    results.append(check("Live run", status.startswith('KAARAN {"compiled": true') and "Total: 12" in output
+                         and 'KAARAN-EXIT {"code": 0' in errors,
+                         f"{output[-40:]!r}, {errors.strip()[-60:]!r}, {time.time() - start:.1f}s"))
+
     if not all(results):
         sys.exit(1)
 

@@ -56,6 +56,14 @@ How Kaaran works, why it is built this way, and where it falls short. Read with 
 - **Memory instead of objects:** a variable's id is the address of its storage, and a pointer's id is the address of the variable it points into (so `&a[2]` belongs to `a`). Writing `x` also "changes" `&x`. That is why the **unchanged Why Engine** follows `*p = 10` to `x`, references to their targets, and `this->value` to the object.
 - `c_analysis.py` uses **tree-sitter** for the same per-line facts as the Python analysis: `scanf("%d", &x)` and `cin >> x` write `x`, `v.push_back` changes `v`, and inside a method, `value` means `this->value`.
 
+### Live runs: type first, then explain
+
+Students expect to run a program that reads input and type into it, so a program that reads input (with nothing in the Input tab) first runs in the **Terminal**, and only then is explained. The lines typed are recorded and the program is traced with exactly that input.
+
+- **C/C++** runs for real: `backend/runner/run_program.py` compiles the program and runs it in the same sandbox as the tracer; a WebSocket (`/run`) carries its output to the browser as it prints and the typed lines to the program. Output is unbuffered (the same helper as the tracer), so prompts without a newline appear at once. Limits: 5 minutes, 64,000 characters of output.
+- **Python** runs in the browser, where a program can't stop and wait for typing. `tracer.run_live` runs it (untraced) until `input()` has no line; the page asks, and runs it again from the start with the line added. A program does the same up to that point each time, and a per-session seed for `random` makes even random numbers repeat, in the live run and in the trace.
+- **Limit:** the explanation is a second run. A program whose behaviour depends on time or other outside state (`srand(time(NULL))`, the clock, files) can behave differently the second time.
+
 ## 3. The Why Engine (`tracer/why.py`)
 
 "Why does `total` have the value 160?" is answered with a **dynamic backward slice** [Korel & Laski 1988; Agrawal & Horgan 1990]: the executed steps the value depends on.

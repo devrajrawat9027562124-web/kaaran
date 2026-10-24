@@ -74,3 +74,50 @@ def run_trace(language, code, stdin=""):
         return json.loads(output)
     except json.JSONDecodeError:
         raise SandboxError("The sandbox returned something that isn't a trace.")
+
+
+# ---------- Live runs: the student uses the program before it is explained ----------
+
+def live_command(name):
+    if mode() == "local":
+        return [sys.executable, os.path.join(RUNNER_DIR, "run_program.py")]
+    # The same locked-down container, running the program instead of the tracer
+    return docker_command(name)[:-1] + ["--entrypoint", "python3", IMAGE, "/app/run_program.py"]
+
+
+class LiveRun:
+    """A program running for the student to type into (runner/run_program.py).
+
+    stdout carries one status line ("KAARAN {...}") and then the program's
+    output; stderr ends with "KAARAN-EXIT {...}". The caller reads both
+    (backend/app.py does it on threads) and writes input with write().
+    """
+
+    def __init__(self, language, code):
+        self.name = f"kaaran-{uuid.uuid4().hex[:12]}"
+        try:
+            self.proc = subprocess.Popen(
+                live_command(self.name), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, bufsize=0, cwd=RUNNER_DIR if mode() == "local" else None)
+        except FileNotFoundError:
+            raise SandboxError("Docker isn't installed or isn't on PATH. Install Docker and build the "
+                               "runner image (see backend/README.md), or set KAARAN_SANDBOX=local for development.")
+        self.proc.stdin.write((json.dumps({"language": language, "code": code}) + "\n").encode("utf-8"))
+
+    def write(self, text):
+        try:
+            self.proc.stdin.write(text.encode("utf-8"))
+        except (BrokenPipeError, OSError, ValueError):
+            pass  # the program already ended
+
+    def close_input(self):
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
+
+    def stop(self):
+        if mode() == "docker":
+            subprocess.run(["docker", "rm", "-f", self.name], capture_output=True)
+        if self.proc.poll() is None:
+            self.proc.kill()

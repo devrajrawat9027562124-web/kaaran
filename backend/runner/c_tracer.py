@@ -111,7 +111,7 @@ def _compile(language, paths, name, result):
         result["compile_output"] = output.strip()
     if done.returncode != 0:
         match = re.search(rf"{re.escape(name)}:(\d+):\d+: (?:fatal )?error: (.*)", output)
-        result["error"] = f"Compile error: {match.group(2)}" if match else "Compile error"
+        result["error"] = f"Compile error: {match.group(2).strip()}" if match else "Compile error"
         result["error_line"] = int(match.group(1)) if match else None
         return False
     return True

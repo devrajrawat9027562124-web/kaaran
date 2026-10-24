@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { explainStep, traceOnBackend } from './backend'
+import { explainStep, liveRun, traceOnBackend, type LiveControl } from './backend'
 import { BottomPanel, type Tab } from './components/BottomPanel'
 import { CodeEditor, type LineMarks } from './components/CodeEditor'
 import { ExplainPanel, type ExplainState } from './components/ExplainPanel'
 import { StatePanel } from './components/StatePanel'
 import { StepControls } from './components/StepControls'
+import { Terminal, type LiveSession } from './components/Terminal'
 import { WhyPanel } from './components/WhyPanel'
 import { EXAMPLES, defaultProgram } from './examples'
 import { PythonEngine, type EngineStatus } from './python/runner'
@@ -25,6 +26,14 @@ const LANGUAGES: { id: Language; label: string }[] = [
   { id: 'cpp', label: 'C++' },
 ]
 const LABEL: Record<Language, string> = { python: 'Python', c: 'C', cpp: 'C++' }
+
+/** A live run's random seed, so its random numbers repeat in the explanation. */
+function newSeed(): number {
+  return Math.floor(Math.random() * 1_000_000_000)
+}
+
+/** Typed lines as the program's input: one per line. */
+const toStdin = (lines: string[]) => lines.map((line) => `${line}\n`).join('')
 
 function useDarkMode(): boolean {
   const query = '(prefers-color-scheme: dark)'
@@ -59,10 +68,13 @@ export default function App() {
   const [asking, setAsking] = useState<{ name: string; frameIndex: number } | null>(null)
   const [explanation, setExplanation] = useState<ExplainState>(NO_EXPLANATION)
   const [tab, setTab] = useState<Tab>('output')
-  const [inputHint, setInputHint] = useState(false)
   const [languageHint, setLanguageHint] = useState<Language | null>(null)
   const explainRequest = useRef(0)  // so a late answer can't land on a different step
   const engine = useRef<PythonEngine | null>(null)
+  // A live run: the program runs, the student types, then that run is explained
+  const [live, setLive] = useState<LiveSession | null>(null)
+  const liveControl = useRef<LiveControl | null>(null)
+  const liveRunInfo = useRef({ language: 'python' as Language, code: '', inputs: [] as string[], seed: -1 })
 
   useEffect(() => {
     const created = new PythonEngine((s, detail) => {
@@ -109,8 +121,13 @@ export default function App() {
     }
   }
 
-  /** `as` runs in that language without asking; `withoutInput` skips the input check. */
-  const run = async (options: { as?: Language; withoutInput?: boolean } = {}) => {
+  /**
+   * Run the program. If it reads input and the Input tab is empty, it first
+   * runs live in the Terminal: the student types its input as it asks, and
+   * then exactly that run is explained. Otherwise it is traced at once.
+   * `as` runs in that language without asking; `stdin` and `seed` replay a live run.
+   */
+  const run = async (options: { as?: Language; withoutInput?: boolean; stdin?: string; seed?: number } = {}) => {
     if (!engine.current || busy) return
     const lang = options.as ?? language
     if (!options.as) {
@@ -122,13 +139,11 @@ export default function App() {
       }
     }
     setLanguageHint(null)
-    if (!options.withoutInput && !stdin.trim() && readsInput(code, lang)) {
-      // A menu program with no input just loops on "invalid choice": ask first
-      setInputHint(true)
-      setTab('input')
+    const input = options.stdin ?? stdin
+    if (!options.withoutInput && !input.trim() && readsInput(code, lang)) {
+      startLive(lang)
       return
     }
-    setInputHint(false)
     setBusy(true)
     setPlaying(false)
     setRunError(null)
@@ -136,9 +151,9 @@ export default function App() {
     try {
       let result: { trace: Trace; narration: string[] }
       if (lang === 'python') {
-        result = await engine.current.run(code, stdin)
+        result = await engine.current.run(code, input, options.seed ?? -1)
       } else {
-        const fromBackend = await traceOnBackend(lang, code, stdin)
+        const fromBackend = await traceOnBackend(lang, code, input)
         result = { trace: fromBackend, narration: await engine.current.load(fromBackend) }
       }
       setTrace(result.trace)
@@ -146,11 +161,105 @@ export default function App() {
       setIndex(0)
       setFrameChoice(null)
       setStale(false)
+      return true
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
+  }
+
+  // ---------- Live runs ----------
+
+  const updateLive = (change: Partial<LiveSession>) => setLive((s) => (s ? { ...s, ...change } : s))
+
+  const startLive = (lang: Language) => {
+    liveControl.current?.stop()
+    liveRunInfo.current = { language: lang, code, inputs: [], seed: newSeed() }
+    setRunError(null)
+    setTrace(null)
+    clearWhy()
+    setLive({ status: 'starting', segments: [], inputs: [], note: null })
+    setTab('terminal')
+    if (lang === 'python') {
+      void pythonTurn(false)
+      return
+    }
+    liveControl.current = liveRun(lang, code, {
+      onCompiled: () => updateLive({ status: 'running' }),
+      onOutput: (text) => setLive((s) => (s ? { ...s, segments: [...s.segments, { text, typed: false }] } : s)),
+      onCompileError: (message, line) => updateLive({ status: 'failed', note: `${line ? `Line ${line}: ` : ''}${message}` }),
+      onExit: (result) => {
+        if (result.stopped) {
+          updateLive({ status: 'stopped', note: null })
+          return
+        }
+        const note = result.signal ? `${result.message} (${result.signal})`
+          : result.code ? `The program finished with exit code ${result.code}.` : null
+        updateLive({ status: 'finished', note })
+        explainLive()
+      },
+      onError: (message) => updateLive({ status: 'failed', note: message }),
+    })
+  }
+
+  /** Python runs in the browser, which can't pause for typing: it runs up to
+   *  the next input() it has no line for, and again from the start once typed. */
+  const pythonTurn = async (endOfInput: boolean) => {
+    const info = liveRunInfo.current
+    if (!engine.current) return
+    try {
+      const result = await engine.current.runLive(info.code, toStdin(info.inputs), info.seed, endOfInput)
+      const segments = [{ text: result.stdout, typed: false }]
+      if (result.status === 'input') {
+        updateLive({ status: 'running', segments })
+      } else {
+        const note = result.error ? `${result.error_line ? `Line ${result.error_line}: ` : ''}${result.error}` : null
+        updateLive({ status: 'finished', segments, note })
+        explainLive()
+      }
+    } catch (error) {
+      updateLive({ status: 'failed', note: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  const sendLine = (line: string) => {
+    const info = liveRunInfo.current
+    info.inputs = [...info.inputs, line]
+    if (info.language === 'python') {
+      updateLive({ inputs: info.inputs })
+      void pythonTurn(false)
+    } else {
+      setLive((s) => (s ? { ...s, inputs: info.inputs, segments: [...s.segments, { text: `${line}\n`, typed: true }] } : s))
+      liveControl.current?.send(line)
+    }
+  }
+
+  const endLiveInput = () => {
+    if (liveRunInfo.current.language === 'python') void pythonTurn(true)
+    else liveControl.current?.endInput()
+  }
+
+  const stopLive = () => {
+    if (liveRunInfo.current.language === 'python') updateLive({ status: 'stopped' })
+    else liveControl.current?.stop()
+  }
+
+  /** Trace the program with exactly what the student typed in the live run. */
+  const explainLive = () => {
+    const info = liveRunInfo.current
+    const input = toStdin(info.inputs)
+    setStdin(input)
+    void run({ as: info.language, withoutInput: true, stdin: input, seed: info.seed }).then((ok) => {
+      if (ok) setTab('output')
+    })
+  }
+
+  const endLive = () => {
+    liveControl.current?.stop()
+    liveControl.current = null
+    setLive(null)
+    setTab((t) => (t === 'terminal' ? 'output' : t))
   }
 
   const askWhy = async (name: string, frame: number) => {
@@ -232,6 +341,7 @@ export default function App() {
     const untouched = code.trim() === '' || Object.values(EXAMPLES).some((list) => list.some((e) => same(e.code, code)))
     setLanguage(next)
     if (untouched) setCode(defaultProgram(next))
+    endLive()
     setLanguageHint(null)
     setTrace(null)
     setRunError(null)
@@ -241,6 +351,7 @@ export default function App() {
   const loadExample = (name: string) => {
     const example = EXAMPLES[language].find((e) => e.name === name)
     if (!example) return
+    endLive()
     setCode(example.code)
     setTrace(null)
     setRunError(null)
@@ -309,6 +420,10 @@ export default function App() {
             onStdin={setStdin}
             onGo={go}
             onWhyOutput={askWhyOutput}
+            terminal={live ? (
+              <Terminal session={live} onSend={sendLine} onEndInput={endLiveInput} onStop={stopLive}
+                onExplain={explainLive} />
+            ) : undefined}
           />
         </div>
 
@@ -332,21 +447,17 @@ export default function App() {
               </div>
             </div>
           )}
-          {inputHint && (
-            <div className="panel notice" role="alert">
+          {live && (live.status === 'starting' || live.status === 'running') && (
+            <div className="panel notice">
               <p>
-                This program reads input, and the Input tab is empty. Type everything it will read there,
-                one value per line. For a menu, give each choice followed by the values it asks for, and end
-                with the exit choice (for example: 1, 50, 1, 30, 4, 7).
+                Your program is running in the <strong>Terminal</strong> below. Type its input there, as you
+                would in a terminal. When it finishes, Kaaran explains this run step by step, with your input.
               </p>
-              <button type="button" className="quiet run-anyway" onClick={() => run({ as: language, withoutInput: true })}>
-                Run without input
-              </button>
             </div>
           )}
           {runError && <p className="panel error-text" role="alert">{runError}</p>}
           {stale && <p className="panel notice">You changed the code. Press Run to step through the new version.</p>}
-          {!trace && !runError && (
+          {!trace && !runError && !live && (
             <div className="panel intro">
               <h2>Step through your program</h2>
               <p>

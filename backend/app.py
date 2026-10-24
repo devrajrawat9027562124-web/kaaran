@@ -5,19 +5,23 @@ Python never comes here: it runs in the browser with Pyodide.
 
     GET  /health
     POST /trace    {"language": "c" | "cpp", "code": "...", "input": "..."}
+    WS   /run      run a C/C++ program live, for the student to type into
     POST /explain  the facts of one step (see ExplainRequest) -> explanation
 
 Run from the backend folder:   uvicorn app:app --port 8000
 Settings come from the environment or backend/.env (see .env.example).
 """
 import asyncio
+import codecs
+import json
 import os
+import threading
 import time
 from collections import defaultdict, deque
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -29,12 +33,15 @@ import sandbox  # noqa: E402
 MAX_CODE_CHARS = 20_000
 MAX_INPUT_CHARS = 10_000
 MAX_PARALLEL_RUNS = 4
+LIVE_SECONDS = 300          # a live run may last 5 minutes (it mostly waits for typing)
+LIVE_OUTPUT_LIMIT = 64_000  # characters printed before a live run is stopped
 DEFAULT_ORIGINS = "http://localhost:5173,https://devrajrawat9027562124-web.github.io"
+ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()]
 
 app = FastAPI(title="Kaaran backend")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in os.environ.get("ALLOWED_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()],
+    allow_origins=ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )
@@ -133,3 +140,128 @@ async def trace(body: TraceRequest, request: Request):
             return await asyncio.to_thread(sandbox.run_trace, body.language, body.code, body.input)
         except sandbox.SandboxError as e:
             raise HTTPException(503, str(e))
+
+
+@app.websocket("/run")
+async def run_live(ws: WebSocket):
+    """Run a C/C++ program for the student to type into, before it is explained.
+
+    Browser -> backend: {"type": "start", "language", "code"}, then
+        {"type": "input", "data": "5\n"}, {"type": "eof"} (end of input) or {"type": "stop"}.
+    Backend -> browser: {"type": "compiled"} or {"type": "compile_error", ...},
+        {"type": "output", "data": "..."} as the program prints, and finally
+        {"type": "exit", "code", "signal", "message"} or {"type": "error", "message"}.
+    """
+    origin = ws.headers.get("origin")
+    if origin and origin not in ORIGINS:  # CORS doesn't cover WebSockets
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    try:
+        start = await asyncio.wait_for(ws.receive_json(), timeout=30)
+    except Exception:
+        await ws.close()
+        return
+    language, code = start.get("language"), start.get("code")
+    if language not in ("c", "cpp") or not isinstance(code, str) or len(code) > MAX_CODE_CHARS:
+        await ws.send_json({"type": "error", "message": "Only C and C++ programs (up to 20,000 characters) run here."})
+        await ws.close()
+        return
+    if not trace_limiter.allow(ws.client.host if ws.client else "unknown"):
+        await ws.send_json({"type": "error", "message": "Too many runs in a minute. Wait a little and try again."})
+        await ws.close()
+        return
+    async with runs:
+        try:
+            run = await asyncio.to_thread(sandbox.LiveRun, language, code)
+        except sandbox.SandboxError as e:
+            await ws.send_json({"type": "error", "message": str(e)})
+            await ws.close()
+            return
+        try:
+            await _live_session(ws, run)
+        finally:
+            await asyncio.to_thread(run.stop)
+            try:
+                await ws.close()
+            except Exception:
+                pass
+
+
+async def _live_session(ws, run):
+    loop = asyncio.get_running_loop()
+    events = asyncio.Queue()
+
+    def pump(stream, kind):
+        # Raw reads return whatever the program printed, so a prompt without
+        # a newline ("Enter a number: ") reaches the browser at once
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        try:
+            while chunk := stream.read(4096):
+                loop.call_soon_threadsafe(events.put_nowait, (kind, decoder.decode(chunk)))
+            loop.call_soon_threadsafe(events.put_nowait, (kind + "-end", decoder.decode(b"", final=True)))
+        except (RuntimeError, OSError, ValueError):
+            pass  # the session already ended (its event loop or the pipe is closed)
+
+    threading.Thread(target=pump, args=(run.proc.stdout, "out"), daemon=True).start()
+    threading.Thread(target=pump, args=(run.proc.stderr, "err"), daemon=True).start()
+
+    deadline = loop.time() + LIVE_SECONDS
+    compiled, pending, errors, printed, ended = None, "", "", 0, set()
+    receive = asyncio.create_task(ws.receive_json())
+    event = asyncio.create_task(events.get())
+    try:
+        while len(ended) < 2:
+            done, _ = await asyncio.wait({receive, event}, timeout=max(0.0, deadline - loop.time()),
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if not done:
+                await ws.send_json({"type": "error", "message": f"Stopped after {LIVE_SECONDS // 60} minutes."})
+                return
+            if receive in done:
+                try:
+                    message = receive.result()
+                except Exception:
+                    return  # the browser went away
+                if message.get("type") == "input":
+                    run.write(str(message.get("data", ""))[:2000])
+                elif message.get("type") == "eof":
+                    run.close_input()
+                elif message.get("type") == "stop":
+                    await ws.send_json({"type": "exit", "stopped": True})
+                    return
+                receive = asyncio.create_task(ws.receive_json())
+            if event in done:
+                kind, text = event.result()
+                event = asyncio.create_task(events.get())
+                if kind == "err":
+                    errors += text
+                elif kind.endswith("-end"):
+                    ended.add(kind)
+                elif compiled is None:  # the first line says whether it compiled
+                    pending += text
+                    if "\n" not in pending:
+                        continue
+                    line, text = pending.split("\n", 1)
+                    status = json.loads(line.removeprefix("KAARAN ").strip() or "{}") if line.startswith("KAARAN") else {}
+                    compiled = bool(status.get("compiled"))
+                    if not compiled:
+                        await ws.send_json({"type": "compile_error", **status})
+                        return
+                    await ws.send_json({"type": "compiled"})
+                if kind == "out" and compiled and text:
+                    printed += len(text)
+                    if printed > LIVE_OUTPUT_LIMIT:
+                        await ws.send_json({"type": "error",
+                                            "message": "The program printed too much (an endless loop?) and was stopped."})
+                        return
+                    # Windows programs print \r\n; the browser wants \n
+                    await ws.send_json({"type": "output", "data": text.replace("\r\n", "\n")})
+        exit_line = next((l for l in errors.splitlines() if l.startswith("KAARAN-EXIT ")), None)
+        if exit_line:
+            await ws.send_json({"type": "exit", **json.loads(exit_line.removeprefix("KAARAN-EXIT "))})
+        else:
+            detail = errors.strip().splitlines()[-1:] or ["no details"]
+            await ws.send_json({"type": "error", "message": f"The program couldn't run: {detail[0]}"})
+    finally:
+        receive.cancel()
+        event.cancel()

@@ -10,6 +10,7 @@ import builtins
 import inspect
 import io
 import json
+import random
 import sys
 import types
 
@@ -379,10 +380,36 @@ def error_line(tb):
     return line
 
 
-def trace(code, stdin="", max_steps=MAX_STEPS):
+class NeedInput(BaseException):
+    """input() found no more input during a live run: the student types it."""
+
+
+def _program_globals(output, feed, when_empty):
+    """Globals for the student's program. input() reads the next line from
+    `feed` and echoes it like a terminal does; when_empty(prompt) decides
+    what happens when there is none."""
+    def fake_input(prompt=""):
+        output.write(str(prompt))
+        line = feed.readline()
+        if not line:
+            when_empty(str(prompt))
+        output.write(line if line.endswith("\n") else line + "\n")
+        return line.rstrip("\r\n")
+
+    student_builtins = dict(vars(builtins))
+    student_builtins["input"] = fake_input
+    return {"__name__": "__main__", "__builtins__": student_builtins}
+
+
+def _no_more_input(prompt):
+    raise EOFError("EOF when reading a line (give the program more input)")
+
+
+def trace(code, stdin="", max_steps=MAX_STEPS, seed=None):
     """Run code and return {"steps", "stdout", "error", ...} (docs/trace-format.md).
 
     stdin is everything the program will read with input(), given up front.
+    seed makes random numbers repeat a live run's (see run_live).
     """
     result = {"language": "python", "code": code, "steps": [], "stdout": "",
               "error": None, "error_line": None, "truncated": False}
@@ -396,19 +423,9 @@ def trace(code, stdin="", max_steps=MAX_STEPS):
 
     recorder = Recorder(lines, max_steps)
     feed = io.StringIO(stdin)
-
-    def fake_input(prompt=""):
-        # Echo like a terminal does, so the output panel reads naturally
-        recorder.output.write(str(prompt))
-        line = feed.readline()
-        if not line:
-            raise EOFError("EOF when reading a line (give the program more input)")
-        recorder.output.write(line if line.endswith("\n") else line + "\n")
-        return line.rstrip("\r\n")
-
-    student_builtins = dict(vars(builtins))
-    student_builtins["input"] = fake_input
-    program_globals = {"__name__": "__main__", "__builtins__": student_builtins}
+    program_globals = _program_globals(recorder.output, feed, _no_more_input)
+    if seed is not None:
+        random.seed(seed)
 
     old_stdout, old_stdin = sys.stdout, sys.stdin
     sys.stdout, sys.stdin = recorder.output, feed
@@ -432,6 +449,52 @@ def trace(code, stdin="", max_steps=MAX_STEPS):
     result["stdout"] = recorder.output.getvalue()
     if recorder.internal_error:
         result["internal_error"] = recorder.internal_error
+    return result
+
+
+def run_live(code, stdin="", seed=None, eof=False):
+    """Run a program normally (not traced), for the student to use before it
+    is explained. Returns {"status", "stdout", "error", "error_line"}.
+
+    status "input" means the program is waiting for another line. The page
+    asks the student, then runs the program again from the start with that
+    line added. Up to that point it does exactly the same as before (with
+    the same seed, even its random numbers), so to the student it works like
+    typing into a terminal. With eof=True, input() at the end raises
+    EOFError instead (the student ended the input).
+    """
+    result = {"status": "done", "stdout": "", "error": None, "error_line": None}
+    try:
+        compiled = compile(code, FILENAME, "exec")
+    except SyntaxError as e:
+        result["error"] = f"SyntaxError: {e.msg}"
+        result["error_line"] = e.lineno
+        return result
+
+    def when_empty(prompt):
+        if eof:
+            _no_more_input(prompt)
+        raise NeedInput(prompt)
+
+    output, feed = io.StringIO(), io.StringIO(stdin)
+    program_globals = _program_globals(output, feed, when_empty)
+    if seed is not None:
+        random.seed(seed)
+    old_stdout, old_stdin = sys.stdout, sys.stdin
+    sys.stdout, sys.stdin = output, feed
+    try:
+        exec(compiled, program_globals)
+    except NeedInput:
+        result["status"] = "input"
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            result["error"] = f"SystemExit: {e.code}"
+    except BaseException as e:
+        result["error"] = f"{type(e).__name__}: {e}"
+        result["error_line"] = error_line(e.__traceback__)
+    finally:
+        sys.stdout, sys.stdin = old_stdout, old_stdin
+    result["stdout"] = output.getvalue()
     return result
 
 

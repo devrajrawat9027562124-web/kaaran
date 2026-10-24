@@ -4,6 +4,13 @@ import type { Trace, WhyAnswer } from '../types'
 
 export type EngineStatus = 'loading' | 'ready' | 'running' | 'failed'
 
+export interface LiveResult {
+  status: 'input' | 'done'
+  stdout: string
+  error: string | null
+  error_line: number | null
+}
+
 const RUN_TIMEOUT_MS = 20_000
 
 interface Pending {
@@ -71,15 +78,25 @@ export class PythonEngine {
     })
   }
 
-  async run(code: string, stdin: string): Promise<{ trace: Trace; narration: string[] }> {
+  /** seed: the live run's random seed, so random numbers repeat (-1: none). */
+  async run(code: string, stdin: string, seed = -1): Promise<{ trace: Trace; narration: string[] }> {
     this.onStatus('running')
     try {
-      const trace = JSON.parse(await this.call('run', [code, stdin], RUN_TIMEOUT_MS)) as Trace
+      const trace = JSON.parse(await this.call('run', [code, stdin, 2000, seed], RUN_TIMEOUT_MS)) as Trace
       const narration = JSON.parse(await this.call('explain_all', [])) as string[]
       return { trace, narration }
     } finally {
       if (this.loaded) this.onStatus('ready')  // not if it was just restarted
     }
+  }
+
+  /**
+   * Run the program normally (not traced) with the lines typed so far.
+   * "input" means it is waiting for another line: ask, then call again
+   * with that line added (the program repeats itself up to that point).
+   */
+  async runLive(code: string, stdin: string, seed: number, eof = false): Promise<LiveResult> {
+    return JSON.parse(await this.call('run_live', [code, stdin, seed, eof ? 1 : 0], RUN_TIMEOUT_MS)) as LiveResult
   }
 
   /** Use a trace from the C/C++ backend for "Why?" questions. */
