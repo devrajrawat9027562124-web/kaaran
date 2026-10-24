@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python tracer, Why Engine, backend API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pip install -r backend/requirements.txt pytest==9.1.1 httpx==0.28.1 pytest-github-actions-annotate-failures==0.4.2
+      # The C/C++ tests skip here (no gdb); the next job runs them
+      - run: python -m pytest tests -v
+
+  c-cpp:
+    name: C/C++ tracer (gcc + gdb)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: sudo apt-get update && sudo apt-get install -y gdb
+      - run: gcc --version && gdb --version
+      - run: pip install -r backend/runner/requirements.txt pytest==9.1.1 pytest-github-actions-annotate-failures==0.4.2
+      - run: python -m pytest tests/test_c_analysis.py tests/test_c_tracer.py -v
+        env:
+          KAARAN_REQUIRE_GDB: "1"
+
+  sandbox:
+    name: Docker sandbox
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t kaaran-runner backend/runner
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pip install -r backend/requirements.txt
+      - run: python backend/sandbox_check.py
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

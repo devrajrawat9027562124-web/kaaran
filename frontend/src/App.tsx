@@ -135,11 +135,10 @@ export default function App() {
   // Play: one step at a time until the end
   useEffect(() => {
     if (!playing) return
-    if (index >= count - 1) {
-      setPlaying(false)
-      return
-    }
-    const timer = window.setTimeout(() => go(index + 1), PLAY_DELAY_MS)
+    const timer = window.setTimeout(() => {
+      if (index + 1 >= count - 1) setPlaying(false)
+      go(index + 1)
+    }, PLAY_DELAY_MS)
     return () => clearTimeout(timer)
   }, [playing, index, count, go])
 
