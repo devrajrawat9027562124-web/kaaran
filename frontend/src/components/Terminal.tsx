@@ -9,6 +9,7 @@ export interface LiveSession {
 
 interface Props {
   session: LiveSession
+  explaining: boolean  // the run is being traced for stepping through
   onSend: (line: string) => void
   onEndInput: () => void
   onStop: () => void
@@ -18,7 +19,7 @@ interface Props {
 const STATUS: Record<LiveSession['status'], string> = {
   starting: 'Compiling and starting your program…',
   running: 'Your program is running. Type input when it asks, then press Enter.',
-  finished: 'The program finished. Kaaran is explaining this run, with your input…',
+  finished: 'The program finished. Press Explain this run to step through it, with your input.',
   stopped: 'Stopped.',
   failed: "The program couldn't run.",
 }
@@ -27,7 +28,7 @@ const STATUS: Record<LiveSession['status'], string> = {
  * The program's console: it runs like it would in a terminal, the student
  * types its input, and afterwards Kaaran explains exactly this run.
  */
-export function Terminal({ session, onSend, onEndInput, onStop, onExplain }: Props) {
+export function Terminal({ session, explaining, onSend, onEndInput, onStop, onExplain }: Props) {
   const [line, setLine] = useState('')
   const screen = useRef<HTMLPreElement | null>(null)
   const field = useRef<HTMLInputElement | null>(null)
@@ -57,8 +58,14 @@ export function Terminal({ session, onSend, onEndInput, onStop, onExplain }: Pro
             <button type="button" className="quiet" onClick={onStop}>Stop</button>
           </div>
         )}
+        {/* The student decides when to move on from the run to explaining it */}
+        {session.status === 'finished' && (
+          <button type="button" className="run" onClick={onExplain} disabled={explaining}>
+            {explaining ? 'Explaining…' : 'Explain this run'}
+          </button>
+        )}
         {session.status === 'stopped' && session.inputs.length > 0 && (
-          <button type="button" className="quiet" onClick={onExplain}>Explain what ran</button>
+          <button type="button" className="quiet" onClick={onExplain} disabled={explaining}>Explain what ran</button>
         )}
       </div>
       <pre className="terminal-screen" ref={screen} aria-live="polite">

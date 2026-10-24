@@ -8,6 +8,12 @@ Python never comes here: it runs in the browser with Pyodide.
     WS   /run      run a C/C++ program live, for the student to type into
     POST /explain  the facts of one step (see ExplainRequest) -> explanation
 
+Accounts (optional: the tool works without one), see accounts.py:
+    POST /auth/signup {"name", "email", "password"} -> {"token", "user"}
+    POST /auth/login  {"email", "password"}         -> {"token", "user"}
+    POST /auth/logout, GET /auth/me                    (Authorization: Bearer <token>)
+    GET/POST /programs, GET/PUT/DELETE /programs/{id}  the student's saved programs
+
 Run from the backend folder:   uvicorn app:app --port 8000
 Settings come from the environment or backend/.env (see .env.example).
 """
@@ -21,13 +27,14 @@ from collections import defaultdict, deque
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-import explainer  # noqa: E402  (both read settings loaded above)
+import accounts  # noqa: E402  (all three read settings loaded above)
+import explainer  # noqa: E402
 import sandbox  # noqa: E402
 
 MAX_CODE_CHARS = 20_000
@@ -42,8 +49,8 @@ app = FastAPI(title="Kaaran backend")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGINS,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -77,6 +84,8 @@ class RateLimiter:
 
 trace_limiter = RateLimiter(limit=int(os.environ.get("TRACE_RATE_LIMIT", "20")), window=60)
 explain_limiter = RateLimiter(limit=int(os.environ.get("EXPLAIN_RATE_LIMIT", "10")), window=60)
+# Logins and signups: slows down guessing passwords
+auth_limiter = RateLimiter(limit=int(os.environ.get("AUTH_RATE_LIMIT", "10")), window=60)
 runs = asyncio.Semaphore(MAX_PARALLEL_RUNS)
 explanations = explainer.Explainer()
 
@@ -107,13 +116,110 @@ class ExplainRequest(BaseModel):
     why: WhyFacts | None = None
 
 
+class SignupRequest(BaseModel):
+    # Only upper bounds here; accounts.signup checks the rest with messages for the student
+    name: str = Field(max_length=200)
+    email: str = Field(max_length=320)
+    password: str = Field(max_length=1000)
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(max_length=320)
+    password: str = Field(max_length=1000)
+
+
+class ProgramBody(BaseModel):
+    title: str = Field(max_length=200)
+    language: str = Field(max_length=10)
+    code: str = Field(max_length=MAX_CODE_CHARS)
+    input: str = Field(default="", max_length=MAX_INPUT_CHARS)
+
+
 def client_address(request: Request):
     return request.client.host if request.client else "unknown"
 
 
+def session_token(authorization: str | None = Header(default=None)):
+    return authorization.removeprefix("Bearer ").strip() if authorization and authorization.startswith("Bearer ") else ""
+
+
+def current_user(token: str = Depends(session_token)):
+    user = accounts.user_for(token)
+    if not user:
+        raise HTTPException(401, "You're logged out (or your session ended). Log in again.")
+    return user
+
+
+def account_call(function, *args):
+    try:
+        return function(*args)
+    except accounts.AccountError as e:
+        raise HTTPException(e.status, str(e))
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "sandbox": sandbox.mode(), "explainer": explainer.available()}
+    return {"ok": True, "sandbox": sandbox.mode(), "explainer": explainer.available(), "accounts": True}
+
+
+# ---------- Accounts and saved programs ----------
+
+@app.post("/auth/signup", status_code=201)
+def signup(body: SignupRequest, request: Request):
+    if not auth_limiter.allow(client_address(request)):
+        raise HTTPException(429, "Too many tries in a minute. Wait a little and try again.")
+    token, user = account_call(accounts.signup, body.name, body.email, body.password)
+    return {"token": token, "user": user}
+
+
+@app.post("/auth/login")
+def login(body: LoginRequest, request: Request):
+    if not auth_limiter.allow(client_address(request)):
+        raise HTTPException(429, "Too many tries in a minute. Wait a little and try again.")
+    token, user = account_call(accounts.login, body.email, body.password)
+    return {"token": token, "user": user}
+
+
+@app.post("/auth/logout", status_code=204)
+def logout(token: str = Depends(session_token)):
+    if token:
+        accounts.logout(token)
+    return Response(status_code=204)
+
+
+@app.get("/auth/me")
+def me(user=Depends(current_user)):
+    return user
+
+
+@app.get("/programs")
+def list_programs(user=Depends(current_user)):
+    return accounts.list_programs(user["id"])
+
+
+@app.post("/programs", status_code=201)
+def create_program(body: ProgramBody, user=Depends(current_user)):
+    return account_call(accounts.create_program, user["id"], body.title, body.language, body.code, body.input)
+
+
+@app.get("/programs/{program_id}")
+def get_program(program_id: int, user=Depends(current_user)):
+    return account_call(accounts.get_program, user["id"], program_id)
+
+
+@app.put("/programs/{program_id}")
+def update_program(program_id: int, body: ProgramBody, user=Depends(current_user)):
+    return account_call(accounts.update_program, user["id"], program_id, body.title, body.language, body.code,
+                        body.input)
+
+
+@app.delete("/programs/{program_id}", status_code=204)
+def delete_program(program_id: int, user=Depends(current_user)):
+    account_call(accounts.delete_program, user["id"], program_id)
+    return Response(status_code=204)
+
+
+# ---------- Tracing and explaining ----------
 
 
 @app.post("/explain")

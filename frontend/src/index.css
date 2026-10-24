@@ -85,6 +85,26 @@ button.run {
 }
 button.quiet { border-color: transparent; background: none; color: var(--graphite-2); }
 button.quiet:hover { color: var(--ink); }
+button.danger { border-color: var(--red); background: none; color: var(--red); }
+
+/* Links that look like buttons (Sign up, Try it now) and plain navigation links */
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 14px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--graphite);
+  font-weight: 600;
+  text-decoration: none;
+}
+.button-link:hover { border-color: var(--ink); color: var(--ink); }
+.button-link.primary { border-color: var(--ink); background: var(--ink); color: var(--on-ink); }
+.button-link.primary:hover { color: var(--on-ink); filter: brightness(1.08); }
+.nav-link { padding: 6px 8px; border-radius: var(--radius); color: var(--graphite-2); text-decoration: none; }
+.nav-link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 
 /* ---------- Layout ---------- */
 
@@ -99,6 +119,8 @@ button.quiet:hover { color: var(--ink); }
   border-bottom: 1px solid var(--rule);
 }
 .brand { font-size: 1.375rem; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+.brand a { color: inherit; text-decoration: none; }
+a.brand { color: var(--ink); text-decoration: none; }
 .brand-deva {
   margin-left: 0.3em;
   font-family: 'Nirmala UI', 'Noto Sans Devanagari', 'Mangal', sans-serif;
@@ -483,3 +505,91 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
 .terminal-input input:focus-visible { border-color: var(--ink); }
 .bottom.tall { grid-template-rows: auto 340px; }
 .bottom.tall .terminal-screen { max-height: 230px; }
+
+/* ---------- Account: the top bar's corner, and My programs ---------- */
+
+.page-loading { padding: 40px 24px; color: var(--graphite-2); }
+.account { position: relative; display: flex; align-items: center; gap: 6px; }
+.account .save.done { color: var(--ink); }
+.account-menu { position: relative; }
+.account-menu summary { list-style: none; cursor: pointer; border-radius: 50%; }
+.account-menu summary::-webkit-details-marker { display: none; }
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+/* Pop-ups sit on the page like a second sheet of paper, not a floating card */
+.account-pop, .account-error {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 -1px var(--paper-2), 4px 4px 0 0 var(--rule-strong);
+}
+.account-pop { min-width: 220px; }
+.account-pop p { font-size: 0.875rem; overflow-wrap: anywhere; }
+.account-error { width: min(360px, 90vw); border-color: var(--red); color: var(--red); font-size: 0.875rem; }
+.account-error button { justify-self: end; min-height: 28px; }
+
+.programs-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 64px));
+  padding: 0;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--graphite);
+}
+.programs-dialog::backdrop { background: rgba(20, 28, 48, 0.4); }
+.dialog-body { display: grid; gap: 12px; padding: 20px 22px; }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dialog-field { display: grid; gap: 6px; font-size: 0.875rem; font-weight: 600; }
+.dialog-field input {
+  padding: 8px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 1rem;
+  font-weight: 400;
+}
+.dialog-note { font-size: 0.875rem; color: var(--graphite-2); }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.program-list { list-style: none; margin: 0; padding: 0; max-height: 380px; overflow-y: auto; }
+.program-list li { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--rule); }
+.program-open {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+.program-open:hover:not(:disabled) { background: var(--ink-soft); }
+.program-title { font-weight: 700; overflow-wrap: anywhere; }
+.program-meta { font-size: 0.8125rem; color: var(--graphite-2); }
+.program-confirm { display: flex; gap: 4px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .programs-dialog[open] { animation: rise 0.25s ease-out; }
+  .account-pop { animation: rise 0.2s ease-out; }
+}
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+@media (max-width: 960px) {
+  .account { width: 100%; justify-content: flex-end; }
+}

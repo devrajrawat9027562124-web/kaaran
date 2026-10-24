@@ -9,3 +9,8 @@ build/
 .vscode/
 .idea/
 .pytest_cache/
+# Student accounts (never commit: it holds password hashes)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

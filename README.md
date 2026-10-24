@@ -18,10 +18,11 @@ Kaaran is a debugging tutor for beginner programmers. Paste a program, step thro
   - "changed x through p: p points to x"
   - "the condition was False (using n = 4)"
 - **Memory view**: linked lists, trees and objects drawn as boxes and arrows (a BST in sorted order), with freed memory marked. It works for `malloc`'d structs in C and objects in Python.
-- **Programs that read input (`scanf`, `input()`, menus)**: press Run and the program first runs in the **Terminal**, like a normal compiled program: you type each value when it asks. When it finishes, Kaaran explains exactly that run, with your input. (Or give all the input up front in the Input tab.)
+- **Programs that read input (`scanf`, `input()`, menus)**: press Run and the program first runs in the **Terminal**, like a normal compiled program: you type each value when it asks. When it finishes, press **Explain this run** and Kaaran steps through exactly that run, with your input. (Or give all the input up front in the Input tab.)
 - **Each change is shown as it happens**: the line that just ran gets a note in the editor (`total: 90 → 160`, `→ False`, `printed 3`), changed variables show the old value crossed out, new heap nodes and arrows are drawn in, and new output lines are marked. Play runs slow, normal or fast. All motion is off when the system asks for reduced motion.
 - **Dry-run table**: the trace table students draw on paper, one row per line run, with columns grouped by function and new values only (or every value). It fills in as you step: a line that calls a function fills in once the call returns. In C/C++ a variable declared without a value is written `?` until something sets it. Click a value to ask why; copy or download it as CSV.
 - **Explain this step** (optional): Claude explains the step in plain words. Every value it mentions is checked against the trace, and wrong ones are flagged.
+- **Accounts (optional)**: a home page, log in and sign up. With an account you can save programs and open them again later; without one, everything else works the same ("Continue as guest"). Accounts are kept by the backend in SQLite, with scrypt-hashed passwords.
 - **Safe by design:** Python runs in the browser (Pyodide) and endless programs are stopped. C/C++ runs in a locked-down Docker container.
 
 ## How it works
@@ -86,7 +87,7 @@ Full numbers, how they were measured, and their caveats: **`docs/evaluation.md`*
 |---|---|
 | `tracer/` | Python tracer, its `ast` analysis, the Why Engine, the JSON API used by the browser |
 | `frontend/` | React + TypeScript app (Vite, Monaco, Pyodide worker) |
-| `backend/` | FastAPI app, Docker sandbox, LLM explainer; `runner/` = C/C++ tracer (GDB/MI, tree-sitter) |
+| `backend/` | FastAPI app, Docker sandbox, LLM explainer, accounts (`accounts.py`); `runner/` = C/C++ tracer (GDB/MI, tree-sitter) |
 | `tests/` | pytest suites and the example programs (`tests/programs`, also used as the app's examples) |
 | `evaluation/` | slice benchmark, tracer correctness, explainer accuracy, user-study kit |
 | `docs/` | problem statement, interviews, related work, roadmap, trace format, design, evaluation, weekly log |
@@ -98,3 +99,4 @@ These are listed in full in `docs/design.md`. In short:
 - C/C++ structs and arrays are tracked as whole variables.
 - Programs are limited to 2000 (Python) / 1000 (C/C++) steps.
 - The explainer can only check the values it lists.
+- Accounts have no email verification or password reset, and need the backend: on the GitHub Pages site, logging in works only while a backend is reachable.

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { Program, Session } from './account'
 import { explainStep, liveRun, traceOnBackend, type LiveControl } from './backend'
+import { AccountBar } from './components/AccountBar'
 import { BottomPanel, type Tab } from './components/BottomPanel'
 import { CodeEditor, type LineMarks } from './components/CodeEditor'
 import { ExplainPanel, type ExplainState } from './components/ExplainPanel'
@@ -9,6 +11,7 @@ import { Terminal, type LiveSession } from './components/Terminal'
 import { WhyPanel } from './components/WhyPanel'
 import { EXAMPLES, defaultProgram } from './examples'
 import { PythonEngine, type EngineStatus } from './python/runner'
+import { linkTo } from './router'
 import {
   declaredWithoutValue, explainFacts, guessLanguage, justRan, narrationFor, previousInFrame, previousLocals, readsInput,
 } from './traceUtils'
@@ -50,7 +53,13 @@ function useDarkMode(): boolean {
   return dark
 }
 
-export default function App() {
+interface Props {
+  active?: boolean               // false while another page of the site is shown (the tool stays loaded)
+  session?: Session | null       // a logged-in student, who can save programs
+  onSignOut?: () => void
+}
+
+export default function App({ active = true, session = null, onSignOut = () => {} }: Props) {
   const dark = useDarkMode()
   const [language, setLanguage] = useState<Language>('python')
   const [code, setCode] = useState(() => defaultProgram('python'))
@@ -73,6 +82,13 @@ export default function App() {
   const [explanation, setExplanation] = useState<ExplainState>(NO_EXPLANATION)
   const [tab, setTab] = useState<Tab>('output')
   const [languageHint, setLanguageHint] = useState<Language | null>(null)
+  // The saved program in the editor (Save updates it), for the student logged in now
+  const [saved, setSaved] = useState<{ id: number; title: string } | null>(null)
+  const [savedFor, setSavedFor] = useState(session?.user.id)
+  if (savedFor !== session?.user.id) {
+    setSavedFor(session?.user.id)
+    setSaved(null)
+  }
   const explainRequest = useRef(0)  // so a late answer can't land on a different step
   const engine = useRef<PythonEngine | null>(null)
   // A live run: the program runs, the student types, then that run is explained
@@ -201,7 +217,6 @@ export default function App() {
         const note = result.signal ? `${result.message} (${result.signal})`
           : result.code ? `The program finished with exit code ${result.code}.` : null
         updateLive({ status: 'finished', note })
-        explainLive()
       },
       onError: (message) => updateLive({ status: 'failed', note: message }),
     })
@@ -220,7 +235,6 @@ export default function App() {
       } else {
         const note = result.error ? `${result.error_line ? `Line ${result.error_line}: ` : ''}${result.error}` : null
         updateLive({ status: 'finished', segments, note })
-        explainLive()
       }
     } catch (error) {
       updateLive({ status: 'failed', note: error instanceof Error ? error.message : String(error) })
@@ -331,7 +345,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
-      if (!trace || target.closest('.monaco-editor, textarea, input, select')) return
+      if (!active || !trace || target.closest('.monaco-editor, textarea, input, select, dialog')) return
       if (e.key === 'ArrowRight') go(index + 1)
       else if (e.key === 'ArrowLeft') go(index - 1)
       else if (e.key === 'Home') go(0)
@@ -341,7 +355,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [trace, index, count, go])
+  }, [active, trace, index, count, go])
 
   const marks: LineMarks = useMemo(() => {
     if (!trace || !step || stale) return { slice: [], origins: [] }
@@ -376,11 +390,26 @@ export default function App() {
     if (!example) return
     endLive()
     setCode(example.code)
+    setSaved(null)
     setTrace(null)
     setRunError(null)
     clearWhy()
     if (name.toLowerCase().includes('input')) setStdin(EXAMPLE_INPUT[language])
     if (name.toLowerCase().includes('menu')) setStdin(MENU_INPUT)
+  }
+
+  /** A program from My programs replaces the one in the editor. */
+  const openProgram = (program: Program) => {
+    endLive()
+    setLanguage(program.language)
+    setCode(program.code)
+    setStdin(program.input)
+    setSaved({ id: program.id, title: program.title })
+    setTrace(null)
+    setStale(false)
+    setRunError(null)
+    setLanguageHint(null)
+    clearWhy()
   }
 
   // The line that just ran in the shown frame, and what it declared without a value (C/C++)
@@ -400,7 +429,9 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <h1 className="brand">
-          Kaaran <span className="brand-deva" lang="hi">कारण</span>
+          <a href={linkTo('home')} title="Kaaran home page">
+            Kaaran <span className="brand-deva" lang="hi">कारण</span>
+          </a>
         </h1>
         <div className="topbar-tools">
           <label className="field">
@@ -421,6 +452,9 @@ export default function App() {
           </button>
         </div>
         <p className={status === 'failed' ? 'status failed' : 'status'} role="status">{statusText}</p>
+        <AccountBar session={session} current={{ language, code, input: stdin }} saved={saved}
+          onSaved={(program) => setSaved({ id: program.id, title: program.title })} onOpen={openProgram}
+          onSignOut={onSignOut} />
       </header>
 
       <main className="workspace">
@@ -451,7 +485,7 @@ export default function App() {
             narration={narration}
             onWhyAt={askWhyAt}
             terminal={live ? (
-              <Terminal session={live} onSend={sendLine} onEndInput={endLiveInput} onStop={stopLive}
+              <Terminal session={live} explaining={busy} onSend={sendLine} onEndInput={endLiveInput} onStop={stopLive}
                 onExplain={explainLive} />
             ) : undefined}
           />
@@ -481,7 +515,8 @@ export default function App() {
             <div className="panel notice">
               <p>
                 Your program is running in the <strong>Terminal</strong> below. Type its input there, as you
-                would in a terminal. When it finishes, Kaaran explains this run step by step, with your input.
+                would in a terminal. When it finishes, press <strong>Explain this run</strong> to step through
+                it, with your input.
               </p>
             </div>
           )}

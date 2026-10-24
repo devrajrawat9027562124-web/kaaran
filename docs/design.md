@@ -58,7 +58,7 @@ How Kaaran works, why it is built this way, and where it falls short. Read with 
 
 ### Live runs: type first, then explain
 
-Students expect to run a program that reads input and type into it, so a program that reads input (with nothing in the Input tab) first runs in the **Terminal**, and only then is explained. The lines typed are recorded and the program is traced with exactly that input.
+Students expect to run a program that reads input and type into it, so a program that reads input (with nothing in the Input tab) first runs in the **Terminal**, and only then is explained. When it finishes, the output stays on screen until the student presses **Explain this run** (in a menu program, choosing Exit shouldn't whisk the screen away). The lines typed are recorded and the program is traced with exactly that input.
 
 - **C/C++** runs for real: `backend/runner/run_program.py` compiles the program and runs it in the same sandbox as the tracer; a WebSocket (`/run`) carries its output to the browser as it prints and the typed lines to the program. Output is unbuffered (the same helper as the tracer), so prompts without a newline appear at once. Limits: 5 minutes, 64,000 characters of output.
 - **Python** runs in the browser, where a program can't stop and wait for typing. `tracer.run_live` runs it (untraced) until `input()` has no line; the page asks, and runs it again from the start with the line added. A program does the same up to that point each time, and a per-session seed for `random` makes even random numbers repeat, in the live run and in the trace.
@@ -109,7 +109,20 @@ Each step in the chain is described from the trace alone ("loop round with i = 2
 
 See `backend/README.md`: one container per run, with no network, 256 MB, 1 CPU, 64 processes, a read-only filesystem, no capabilities and a non-root user, plus time and step limits. CI builds the image and checks that a program inside it can't write outside `/tmp` or open a network connection (`backend/sandbox_check.py`).
 
-## 6. Limitations (be ready to discuss these)
+## 6. Accounts (`backend/accounts.py`)
+
+Optional: a student can use everything without an account; an account adds saved programs.
+
+- **Storage:** one SQLite file (`KAARAN_DB`, ignored by git) with three tables: `users`, `sessions`, `programs`.
+- **Passwords:** never stored. Each gets a random 16-byte salt and an scrypt hash (N=2^14, r=8, p=5, one of OWASP's recommended scrypt settings); checking uses a constant-time comparison.
+- **Sessions:** logging in returns a random token (`secrets.token_urlsafe(32)`). The database keeps only its SHA-256, so a stolen copy of the database can't be used to log in. Tokens expire after `KAARAN_SESSION_DAYS` (14) and logging out deletes them.
+- **Token in the browser:** sent as `Authorization: Bearer`, kept in `localStorage`. A cookie would hide it from scripts, but the Pages site and a backend on `localhost` are different sites, where browsers increasingly block cookies. The trade-off: script injection on the page could read the token; the app renders no user HTML, which limits that risk.
+- **Guessing:** wrong email and wrong password get the same message and take the same time (an unknown email is still checked against a dummy hash); logins and signups are rate-limited per address (`AUTH_RATE_LIMIT`).
+- **Isolation:** every program query includes the user's id, so one student can't read or change another's programs (tested).
+- **Gaps:** no email verification, no password reset, no account deletion yet; the rate limit is in memory, per process.
+- **Frontend:** hash routes (`#/`, `#/login`, `#/signup`, `#/app`) because GitHub Pages serves files only. The tool loads lazily the first time it's opened and then stays loaded, so going to log in and back keeps the program and the run.
+
+## 7. Limitations (be ready to discuss these)
 
 | Area | Limitation | Effect |
 |---|---|---|
@@ -126,7 +139,7 @@ See `backend/README.md`: one container per run, with no network, 256 MB, 1 CPU, 
 | Explainer | Values only in the text, not in `mentioned_values`, aren't checked | Possible unflagged error |
 | All | Step limit (2000 Python, 1000 C/C++) and time limits | Long runs are cut |
 
-## 7. References
+## 8. References
 
 Check each source yourself before citing it in the report.
 

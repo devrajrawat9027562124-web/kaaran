@@ -1,0 +1,280 @@
+/* The home, log in and sign up pages: the same answer sheet as the tool,
+   seen as a whole page of ruled paper with a margin rule. */
+
+.site {
+  --line: 32px;    /* ruled-line spacing */
+  --margin: 56px;  /* where the margin rule is */
+  --ruling: color-mix(in srgb, var(--rule) 55%, transparent);  /* faint, so text reads over it */
+  min-height: 100vh;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(90deg, transparent calc(var(--margin) - 4px), var(--rule-strong) calc(var(--margin) - 4px),
+      var(--rule-strong) calc(var(--margin) - 3px), transparent calc(var(--margin) - 3px),
+      transparent var(--margin), var(--rule-strong) var(--margin), var(--rule-strong) calc(var(--margin) + 1px),
+      transparent calc(var(--margin) + 1px)),
+    linear-gradient(transparent calc(var(--line) - 1px), var(--ruling) calc(var(--line) - 1px));
+  background-size: 100% 100%, 100% var(--line);
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px 24px 16px calc(var(--margin) + 24px);
+}
+.site-nav nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.site-nav .brand { white-space: nowrap; }
+.site main, .site-footer {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-left: calc(var(--margin) + 24px);
+  padding-right: 24px;
+}
+
+/* ---------- Home ---------- */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  align-items: center;
+  gap: 56px;
+  padding: 48px 0 72px;
+}
+.hero h1 {
+  font-size: clamp(2.6rem, 5.4vw, 4.6rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  color: var(--graphite);
+}
+.lead { margin-top: 22px; max-width: 34em; font-size: 1.1875rem; line-height: 1.6; }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+.button-link.big { min-height: 48px; padding: 0 22px; font-size: 1.0625rem; }
+.hero-note { margin-top: 14px; font-size: 0.9375rem; color: var(--graphite-2); }
+
+.how, .more { padding: 48px 0; border-top: 1px solid var(--rule-strong); }
+.how h2, .more h2 { font-size: 1.75rem; letter-spacing: -0.015em; }
+/* Run, step, ask: a real sequence, numbered like questions on an answer sheet */
+.how-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.how-steps li { counter-increment: step; }
+.how-steps h3 { display: flex; align-items: center; gap: 10px; font-size: 1.1875rem; }
+.how-steps h3::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  color: var(--ink);
+  font-size: 0.9375rem;
+}
+.how-steps p { margin-top: 8px; max-width: 40ch; color: var(--graphite-2); line-height: 1.6; }
+
+.features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 48px; margin: 20px 0 0; }
+.features div { padding: 18px 0; border-top: 1px solid var(--rule); }
+.features dt { font-size: 1.0625rem; font-weight: 700; }
+.features dd { max-width: 46ch; margin: 4px 0 0; color: var(--graphite-2); line-height: 1.6; }
+
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 24px;
+  padding-bottom: 40px;
+  border-top: 1px solid var(--rule-strong);
+  color: var(--graphite-2);
+}
+.site-footer a { color: var(--ink); }
+
+/* ---------- The demo: a dry run done by hand ---------- */
+
+.demo { margin: 0; }
+/* A sheet with another sheet's edge showing under it */
+.demo-sheet {
+  padding: 18px 20px 16px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background: var(--paper);
+  box-shadow: 7px 7px 0 -1px var(--paper), 7px 7px 0 0 var(--rule-strong);
+}
+.demo-code { margin: 0 0 14px; padding: 0; list-style: none; font-family: var(--mono); font-size: 0.9375rem; }
+.demo-line { display: flex; gap: 14px; padding: 2px 8px; border-radius: 3px; transition: background-color 0.3s; }
+.demo-line code { white-space: pre; }
+.demo-ln { width: 1.2em; flex: none; text-align: right; color: var(--graphite-2); }
+.demo-line.current { background: linear-gradient(var(--highlighter-soft), var(--highlighter-soft)) 0 0 / 100% 100% no-repeat; }
+.demo-line.in-slice { background-color: var(--ink-soft); box-shadow: inset 3px 0 0 var(--ink); }
+.demo-line.origin { background-color: var(--ink-mid); box-shadow: inset 3px 0 0 var(--ink); }
+
+.demo-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 0.875rem; }
+.demo-table th {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--rule-strong);
+  font-family: var(--font);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+  color: var(--graphite-2);
+}
+.demo-table td { height: 28px; padding: 3px 8px; border-bottom: 1px solid var(--rule); color: var(--ink); white-space: nowrap; }
+.demo-table td:first-child { color: var(--graphite-2); }
+.demo-table td.asked { position: relative; }
+/* The value asked about, circled in ink */
+.demo-table td.asked::after {
+  content: '';
+  position: absolute;
+  inset: 1px 0 1px -4px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+.wrong { color: var(--red); text-decoration: underline wavy var(--red); text-underline-offset: 4px; }
+.demo-expected, .demo-note { font-family: var(--font); font-size: 0.75rem; }
+.demo-expected { color: var(--red); }
+.demo-note { color: var(--graphite-2); }
+
+.demo-why {
+  min-height: 7em;  /* room kept, so nothing jumps when the answer arrives */
+  margin-top: 14px;
+  padding: 2px 0 0 14px;
+  border-left: 3px solid var(--ink);
+  opacity: 0;
+  transition: opacity 0.35s;
+}
+.demo-why.shown { opacity: 1; }
+.demo-question { font-weight: 700; color: var(--ink); }
+.demo-answer { margin-top: 4px; line-height: 1.55; opacity: 0; transition: opacity 0.5s 0.1s; }
+.demo-answer.shown { opacity: 1; }
+.demo figcaption { max-width: 52ch; margin-top: 18px; font-size: 0.9375rem; color: var(--graphite-2); }
+
+/* ---------- Log in and sign up: an answer sheet to fill in ---------- */
+
+.auth-main {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 20px;
+  min-height: calc(100vh - 80px);
+  padding-top: 24px;
+  padding-bottom: 64px;
+}
+/* Two more sheets under the form, slightly askew, like a stack on a desk */
+.sheet-stack { position: relative; isolation: isolate; width: min(100%, 440px); }
+.sheet-stack::before, .sheet-stack::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background: var(--paper);
+}
+.sheet-stack::before { transform: rotate(-2.4deg) translate(-6px, 6px); }
+.sheet-stack::after { transform: rotate(1.6deg) translate(5px, 3px); }
+.sheet {
+  position: relative;
+  padding: 30px 30px 26px 46px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background-color: var(--paper);
+  /* the sheet's own margin rule */
+  background-image: linear-gradient(90deg, transparent 26px, var(--rule-strong) 26px, var(--rule-strong) 27px,
+    transparent 27px);
+}
+.sheet h1 { font-size: 1.75rem; letter-spacing: -0.015em; }
+.marked { background: linear-gradient(transparent 58%, var(--highlighter-soft) 58%) 0 0 / 100% 100% no-repeat; }
+.sheet-lead { margin-top: 8px; color: var(--graphite-2); }
+
+.blank { margin-top: 20px; }
+.blank label { font-size: 0.875rem; font-weight: 600; color: var(--graphite-2); }
+.blank-row { display: flex; align-items: flex-end; gap: 6px; }
+/* A ruled blank: what you write is in blue ink, and focus inks the line */
+.blank input {
+  width: 100%;
+  padding: 8px 2px 6px;
+  border: 0;
+  border-bottom: 1.5px solid var(--rule-strong);
+  border-radius: 0;
+  background: linear-gradient(var(--ink), var(--ink)) 0 100% / 0% 2px no-repeat;
+  color: var(--ink);
+  font-size: 1.0625rem;
+  transition: background-size 0.35s ease-out;
+}
+.blank input:focus { outline: none; background-size: 100% 2px; }
+.blank input[aria-invalid] { border-bottom-color: var(--red); background-image: linear-gradient(var(--red), var(--red)); }
+.reveal { min-height: 30px; padding: 0 8px; font-size: 0.875rem; }
+.blank-hint { margin-top: 4px; font-size: 0.8125rem; color: var(--graphite-2); }
+/* Corrections in red pen, next to what they're about */
+.margin-note { margin-top: 6px; font-size: 0.875rem; color: var(--red); }
+.margin-note.general { margin-top: 18px; padding: 8px 10px; border-left: 3px solid var(--red); background: var(--red-soft); }
+.sheet-submit { width: 100%; min-height: 46px; margin-top: 26px; font-size: 1.0625rem; }
+.sheet-switch { margin-top: 16px; text-align: center; color: var(--graphite-2); }
+.sheet-switch a, .auth-guest a { color: var(--ink); font-weight: 600; }
+.auth-guest { color: var(--graphite-2); text-align: center; }
+
+.sheet-done {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  border-radius: 4px;
+  background: var(--paper);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.done-ring { fill: none; stroke: var(--ink-mid); stroke-width: 3; }
+.done-tick { fill: none; stroke: var(--ink); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- Motion (none of it when the system asks for less) ---------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .demo-line.current { animation: highlighter 0.35s ease-out; }
+  .demo-table tr.writing td { animation: write 0.55s ease-out both; }
+  .demo-table td.asked::after { animation: circle 0.45s ease-out both; }
+
+  .sheet-stack::before, .sheet-stack::after { animation: fade-in 0.4s ease-out both; }
+  .sheet { animation: sheet-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .marked { animation: highlighter 0.6s ease-out 0.35s backwards; }
+  .margin-note { animation: note-in 0.3s ease-out; }
+  .sheet-done { animation: fade-in 0.25s ease-out; }
+  .done-ring, .done-tick { stroke-dasharray: 1; }
+  .done-ring { animation: draw 0.5s ease-out both; }
+  .done-tick { animation: draw 0.4s ease-out 0.35s both; }
+}
+
+/* Written in from the left, like a pen */
+@keyframes write { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes circle { from { opacity: 0; transform: scale(1.5); } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(20px) rotate(-1.5deg); } }
+@keyframes note-in { from { opacity: 0; transform: translateX(-4px); } }
+
+/* ---------- Narrow screens ---------- */
+
+@media (max-width: 900px) {
+  .site { --margin: 0px; background-image: linear-gradient(transparent calc(var(--line) - 1px), var(--ruling) calc(var(--line) - 1px)); background-size: 100% var(--line); }
+  .site-nav, .site main, .site-footer { padding-left: 16px; padding-right: 16px; }
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 40px; padding-top: 24px; }
+  .how-steps, .features { grid-template-columns: minmax(0, 1fr); }
+  .demo-code, .demo-table { font-size: 0.8125rem; }
+  .demo-expected { display: block; }
+  .demo-table th, .demo-table td { padding-left: 5px; padding-right: 5px; }
+  .demo-sheet { padding: 14px 12px; }
+  .sheet { padding: 26px 20px 22px 34px; }
+  .sheet-stack::before, .sheet-stack::after { display: none; }
+}
+
+@media (max-width: 480px) {
+  .site-nav a[href="#how"] { display: none; }  /* the section is right below */
+}

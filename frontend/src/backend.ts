@@ -4,30 +4,56 @@ import type { ExplainFacts, ExplainResult, Language, Trace } from './types'
 
 export const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'
 
-async function post<T>(path: string, body: unknown, what: string): Promise<T> {
+/** A failed request. `status` is 0 when the backend couldn't be reached at all. */
+export class BackendError extends Error {
+  readonly status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
+interface RequestOptions {
+  what: string           // for the "isn't reachable" message: "C and C++ run"
+  body?: unknown
+  token?: string | null  // a logged-in student's session
+}
+
+export async function request<T>(method: string, path: string, { what, body, token }: RequestOptions): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (token) headers.Authorization = `Bearer ${token}`
   let response: Response
   try {
     response = await fetch(`${BACKEND_URL}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
-    throw new Error(
+    throw new BackendError(
       `${what} on the Kaaran backend, and it isn't reachable at ${BACKEND_URL}. ` +
         'Start it from the backend folder (see the README), then try again.',
+      0,
     )
   }
   if (!response.ok) {
-    let detail = await response.text()
+    let detail: unknown = await response.text()
     try {
-      detail = JSON.parse(detail).detail ?? detail
+      detail = JSON.parse(detail as string).detail ?? detail
     } catch {
       // plain text
     }
-    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+    // FastAPI's own validation errors are a list: the first message says enough
+    if (Array.isArray(detail)) detail = detail[0]?.msg ?? 'The request was refused.'
+    throw new BackendError(typeof detail === 'string' ? detail : JSON.stringify(detail), response.status)
   }
+  if (response.status === 204) return undefined as T
   return (await response.json()) as T
+}
+
+function post<T>(path: string, body: unknown, what: string): Promise<T> {
+  return request<T>('POST', path, { what, body })
 }
 
 export function traceOnBackend(language: Language, code: string, stdin: string): Promise<Trace> {
