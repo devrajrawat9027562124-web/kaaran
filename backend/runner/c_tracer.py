@@ -257,8 +257,6 @@ class Stepper:
         if reason == "signal-received":
             self._crash(stop)
             return False
-        if "input_line" in self.pending:
-            self._check_input(self.pending.pop("input_line"))
 
         user = self._user_frames()
         if not user:
@@ -269,6 +267,15 @@ class Stepper:
 
         depth = len(user)
         line = int(user[0]["line"])
+        if "input_line" in self.pending:
+            # Check once execution has left the input line (GDB can stop
+            # inside the C library, mid-line, before the read happened)
+            frame_id, input_line = self.pending["input_line"]
+            still_there = depth == len(self.frames) and self.frames \
+                and self.frames[-1].frame_id == frame_id and line == input_line
+            if not still_there:
+                del self.pending["input_line"]
+                self._check_input(input_line)
         returned = depth < len(self.frames)
         value = stop.get("return-value") if reason == "function-finished" else None
         while depth < len(self.frames):
@@ -297,7 +304,8 @@ class Stepper:
 
     def _check_input(self, line):
         """After a line that read input: did the read hit the end of it?"""
-        ran_out = self._eval("feof(kaaran_stdin)")
+        # The cast: newer GDBs won't call a library function without debug info otherwise
+        ran_out = self._eval("(int) feof(kaaran_stdin)")
         if ran_out is not None and ran_out.strip() not in ("0", "") and not self.input_ran_out:
             self.input_ran_out = line
 
@@ -352,7 +360,7 @@ class Stepper:
             # `root->left = insert(...)` changes root's node after the call
             frame.changing = {int(owner, 16) for owner in step["mutates"]}
             if info["input"]:
-                self.pending["input_line"] = line
+                self.pending["input_line"] = (frame.frame_id, line)
             if info["frees"]:
                 freed = [_target(self._eval(path, 0)) for path in info["frees"]]
                 self.pending["freed"] = [address for address in freed if address]
