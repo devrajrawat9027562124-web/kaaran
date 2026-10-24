@@ -16,6 +16,38 @@ Students' browsers
 
 **Why a VM and not Cloud Run:** Cloud Run wipes its disk whenever it restarts a container, which would delete every account, and it can't start the Docker containers that C/C++ runs need. A VM is an ordinary always-on Linux machine, so Kaaran runs on it unchanged.
 
+## The quick route: free tier, set up by a script
+
+Two scripts do everything below for you: `deploy/gcp-create.sh` creates the server from Cloud Shell (a terminal in your browser, already logged in to your Google account: nothing to install), and `deploy/gcp-startup.sh` then installs Kaaran on it by itself.
+
+**What's free.** Google's Free Tier includes one `e2-micro` VM (2 shared CPUs, 1 GB memory) in `us-west1`, `us-central1` or `us-east1`, a 30 GB standard disk, and 1 GB of outgoing data a month. It needs a billing account (a card); new accounts get a $300 credit for 90 days. Whether the VM's public IP address is covered isn't stated on the Free Tier page (it may be billed at about $0.005 an hour), so **set a budget alert** (Billing → Budgets & alerts → a small amount, with email alerts) and look at Billing → Reports after the first few days. Students in India will notice a little delay from a US server; it's fine for Kaaran.
+
+1. **Google Cloud:** at [console.cloud.google.com](https://console.cloud.google.com/), sign in, start the free trial (it asks for a card), and create a project.
+2. **A free name for HTTPS:** at [duckdns.org](https://www.duckdns.org/), sign in, add a name (say `kaaran-devraj`), and copy the **token** shown at the top. Keep it private.
+3. **Gmail for the sign-up codes** (optional now, needed before students sign up): turn on 2-Step Verification for the Gmail account and create an **App Password** (Google Account → Security → App passwords).
+4. **Create the server:** in the console, click **Activate Cloud Shell** (the `>_` button, top right), then:
+   ```
+   gcloud config set project YOUR-PROJECT-ID
+   git clone https://github.com/devrajrawat9027562124-web/kaaran.git && cd kaaran
+   bash deploy/gcp-create.sh
+   ```
+   It asks for the DuckDNS name and token, and the Gmail address and App Password (Enter skips them), then creates the server. The server installs Kaaran by itself in 10 to 20 minutes; the script prints the command to watch it.
+5. **Point the website at it:** on GitHub, repository **Settings → Secrets and variables → Actions → Variables → New**: `KAARAN_BACKEND_URL` = `https://YOUR-NAME.duckdns.org`. Then **Settings → Pages → Source: GitHub Actions**, and **Actions → Deploy to GitHub Pages → Run workflow**.
+6. **Check:** `https://YOUR-NAME.duckdns.org/health` shows `"ok":true` (and `"mail":"smtp"` if Gmail was given). Open `https://devrajrawat9027562124-web.github.io/kaaran/`, sign up (the code arrives by email), and run a C example.
+
+Skipped Gmail in step 4? Add it later: SSH into the VM (Compute Engine → VM instances → **SSH**), `sudo nano /opt/kaaran/backend/.env`, fill in the `SMTP_*` lines as in [Email for the sign-up codes](#email-for-the-sign-up-codes), then `sudo systemctl restart kaaran`.
+
+**Removing it all** (from Cloud Shell). Delete the address too: a reserved address that isn't attached to a VM is charged.
+```
+gcloud compute instances delete kaaran --zone us-central1-a
+gcloud compute addresses delete kaaran-ip --region us-central1
+gcloud compute firewall-rules delete kaaran-web
+```
+
+The rest of this guide is the same setup done by hand, and how to look after the server.
+
+## The same, by hand
+
 Commands below are typed in the VM's terminal (the **SSH** button in the Google Cloud console). Replace `YOUR-DOMAIN` with your domain everywhere.
 
 ## 1. Create the VM

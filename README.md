@@ -72,7 +72,7 @@ CI (`.github/workflows/ci.yml`) runs the tests, the C/C++ tracer with a modern G
 
 **Publish the demo:** in the repository's Settings, open Pages and set Source to **GitHub Actions**. The `pages.yml` workflow then deploys the frontend on every push. The public page uses a backend at `http://localhost:8000` if you run one.
 
-**Run the backend all the time** (so students can sign up and log in whenever they like): follow **`docs/deploy.md`**. It sets the backend up on a Google Cloud VM as a service that starts at boot, with HTTPS, Docker for C/C++ and a daily backup of the accounts.
+**Run the backend all the time** (so students can sign up and log in whenever they like): follow **`docs/deploy.md`**: on Google Cloud's free tier, two scripts do it from Cloud Shell in your browser. It sets the backend up on a Google Cloud VM as a service that starts at boot, with HTTPS, Docker for C/C++ and a daily backup of the accounts.
 
 ## Results so far
 
