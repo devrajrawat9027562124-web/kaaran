@@ -1,0 +1,11 @@
+# Back up the accounts database every day at 03:00 (and at the next boot if
+# the server was off then). The newest 14 backups are kept.
+[Unit]
+Description=Daily backup of the Kaaran accounts database
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

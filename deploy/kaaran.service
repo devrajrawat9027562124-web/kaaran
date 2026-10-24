@@ -1,0 +1,38 @@
+# The Kaaran backend as a system service: it starts when the server boots and
+# is restarted if it ever stops. Install (see docs/deploy.md):
+#   sudo cp deploy/kaaran.service /etc/systemd/system/ && sudo systemctl enable --now kaaran
+
+[Unit]
+Description=Kaaran backend (accounts, C/C++ tracing, explainer)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+User=kaaran
+Group=kaaran
+# Lets it start the sandbox containers. Note: this group can control Docker,
+# which is close to root on this machine; keep the server for Kaaran only.
+SupplementaryGroups=docker
+WorkingDirectory=/opt/kaaran/backend
+# Only Caddy (on this machine) talks to it; Caddy says which address a request came
+# from, so the rate limits count each student separately
+ExecStart=/opt/kaaran/backend/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=always
+RestartSec=3
+
+# The database lives in /var/lib/kaaran (created by systemd, owned by kaaran),
+# readable by this service only: it holds emails and password hashes
+StateDirectory=kaaran
+StateDirectoryMode=0700
+UMask=0077
+Environment=HOME=/var/lib/kaaran
+
+# Hardening: the service can't change the system or read home folders
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

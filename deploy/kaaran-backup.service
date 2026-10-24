@@ -1,0 +1,10 @@
+# One backup of the accounts database; started daily by kaaran-backup.timer.
+[Unit]
+Description=Back up the Kaaran accounts database
+
+[Service]
+Type=oneshot
+User=kaaran
+Group=kaaran
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/kaaran/deploy/backup.py /var/lib/kaaran/kaaran.db /var/backups/kaaran 14

@@ -2,7 +2,9 @@
 // the LLM explainer. Python runs in the browser and never needs it.
 import type { ExplainFacts, ExplainResult, Language, Trace } from './types'
 
-export const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'
+// Set at build time (VITE_BACKEND_URL) for a deployed backend; `||` because CI
+// passes an empty string when the repository variable isn't set
+export const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
 /** A failed request. `status` is 0 when the backend couldn't be reached at all. */
 export class BackendError extends Error {

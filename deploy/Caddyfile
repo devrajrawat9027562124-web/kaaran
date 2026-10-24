@@ -1,0 +1,20 @@
+# Caddy: the HTTPS front door. It gets and renews a free certificate (Let's
+# Encrypt) by itself, and passes requests (and the live-run WebSockets) to the
+# backend. Replace kaaran.example.com with your domain, then:
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+kaaran.example.com {
+	reverse_proxy 127.0.0.1:8000
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	# Code is at most 20,000 characters; nothing needs a bigger request
+	request_body {
+		max_size 1MB
+	}
+}

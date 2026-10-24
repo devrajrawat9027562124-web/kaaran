@@ -39,7 +39,7 @@ import sandbox  # noqa: E402
 
 MAX_CODE_CHARS = 20_000
 MAX_INPUT_CHARS = 10_000
-MAX_PARALLEL_RUNS = 4
+MAX_PARALLEL_RUNS = int(os.environ.get("KAARAN_PARALLEL_RUNS", "4"))  # each run may use 256 MB
 LIVE_SECONDS = 300          # a live run may last 5 minutes (it mostly waits for typing)
 LIVE_OUTPUT_LIMIT = 64_000  # characters printed before a live run is stopped
 DEFAULT_ORIGINS = "http://localhost:5173,https://devrajrawat9027562124-web.github.io"
