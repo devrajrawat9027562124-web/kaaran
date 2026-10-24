@@ -35,11 +35,11 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 
 ## Phase 0: Setup and problem validation (Week 1)
 
-- [ ] Install Git, Node.js (LTS), VS Code (Python already installed)
-- [ ] Create GitHub repo, push this folder
-- [ ] Interview 5 juniors and 1 lab instructor (how do they debug? what confuses them?)
-- [ ] Try Python Tutor on our test programs and note what it can't do
-- [ ] Write `docs/problem.md`: target user, problem, existing tools, how Kaaran is different
+- [x] Install Git, Node.js (LTS), VS Code (Python already installed)
+- [x] Create GitHub repo, push this folder
+- [x] Interview 5 juniors and 1 lab instructor (how do they debug? what confuses them?)
+- [x] Try Python Tutor on our test programs and note what it can't do
+- [x] Write `docs/problem.md`: target user, problem, existing tools, how Kaaran is different
 - [ ] Show `problem.md` to your project guide
 
 **Done when:** repo is on GitHub, interview notes are written, guide has seen the problem statement.
@@ -49,25 +49,25 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 ## Phase 1: Tracer + step-through UI (Week 2–5) [MVP]
 
 ### Tracer (Week 2–3)
-- [ ] TODO 1: record steps (line, event, stack, locals, stdout)
-- [ ] Copy values safely (`repr` or deep copy) so later changes don't overwrite earlier steps
-- [ ] Build the call stack using `frame.f_back`
-- [ ] Handle `call` / `return` events (save return values)
-- [ ] Handle errors: show the error and its line
-- [ ] Support `input()`: take all input before the run
-- [ ] TODO 2: `analyze_reads_writes()` with `ast` (keep it behind a small function so it can be swapped for tree-sitter later, for C/C++)
-- [ ] Heap: track lists/dicts by `id()` (for aliasing)
-- [ ] `tests/test_tracer.py` with pytest, covering all test programs
-- [ ] Add 6 more test programs (nested loops, while, strings, dict, class, exception)
+- [x] TODO 1: record steps (line, event, stack, locals, stdout)
+- [x] Copy values safely (`repr` or deep copy) so later changes don't overwrite earlier steps
+- [x] Build the call stack using `frame.f_back`
+- [x] Handle `call` / `return` events (save return values)
+- [x] Handle errors: show the error and its line
+- [x] Support `input()`: take all input before the run
+- [x] TODO 2: `analyze_reads_writes()` with `ast` (keep it behind a small function so it can be swapped for tree-sitter later, for C/C++)
+- [x] Heap: track lists/dicts by `id()` (for aliasing)
+- [x] `tests/test_tracer.py` with pytest, covering all test programs
+- [x] Add 6 more test programs (nested loops, while, strings, dict, class, exception)
 
 ### Frontend (Week 4–5)
-- [ ] React app (Vite) + Monaco editor, with a language dropdown (only Python enabled for now)
-- [ ] Pyodide in a **Web Worker**, running `tracer.py`
-- [ ] Stop the worker on timeout (infinite loop safety)
-- [ ] Step controls: Run, Next, Back, Play/Pause, step slider
-- [ ] Highlight the current line
-- [ ] Variable table (changed values flash), call stack panel, output and error panel
-- [ ] Deploy to GitHub Pages / Vercel
+- [x] React app (Vite) + Monaco editor, with a language dropdown (only Python enabled for now)
+- [x] Pyodide in a **Web Worker**, running `tracer.py`
+- [x] Stop the worker on timeout (infinite loop safety)
+- [x] Step controls: Run, Next, Back, Play/Pause, step slider
+- [x] Highlight the current line
+- [x] Variable table (changed values flash), call stack panel, output and error panel
+- [ ] Deploy to GitHub Pages / Vercel (workflow ready in `.github/workflows/pages.yml`: turn on Pages in the repo settings)
 
 **Done when:** all test programs step forward and backward in the browser, infinite loops stop cleanly, and the demo link works.
 
@@ -77,15 +77,15 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 
 ## Phase 2: Why Engine (Week 6–8) [MVP, main contribution]
 
-- [ ] Add `control_parent` to each step (which `if`/`for`/`while` made this line run)
-- [ ] Dependency graph: link each read to the last step that wrote it
-- [ ] Backward slice: `why(variable, step)` → steps that caused the value
-- [ ] Handle aliasing using heap object ids
-- [ ] Unit tests for slicing
-- [ ] UI: click a variable → "Why?" → highlight only the slice steps and lines
-- [ ] UI: show the chain as text: "`total = 3` because line 3 added `i = 2` to `total = 1`"
-- [ ] Hand-label correct slices for 20 programs; measure accuracy
-- [ ] Write down known limitations (globals, attributes, library calls)
+- [x] Add `control_parent` to each step (which `if`/`for`/`while` made this line run)
+- [x] Dependency graph: link each read to the last step that wrote it
+- [x] Backward slice: `why(variable, step)` → steps that caused the value
+- [x] Handle aliasing using heap object ids
+- [x] Unit tests for slicing
+- [x] UI: click a variable → "Why?" → highlight only the slice steps and lines
+- [x] UI: show the chain as text: "`total = 3` because line 3 added `i = 2` to `total = 1`"
+- [ ] Hand-label correct slices for 20 programs; measure accuracy (measured in `evaluation/slicing/`, but the labels were drafted by the AI assistant: check them yourself)
+- [x] Write down known limitations (globals, attributes, library calls)
 
 **Done when:** slice accuracy is measured on 20 programs, and the demo works on the loop and aliasing programs.
 
@@ -96,30 +96,30 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 ## Phase C: C/C++ adapter (Week 9–12) [core]
 
 ### Backend and sandbox (Week 9)
-- [ ] FastAPI backend with a `/trace` endpoint: `{language, code, input}` → trace JSON
-- [ ] Docker image with `gcc`, `g++`, `gdb`
-- [ ] Sandbox limits: no network, memory/CPU limits, time limit, non-root user, read-only filesystem except a temp folder
-- [ ] Frontend: send C/C++ code to the backend; Python still runs in the browser
+- [x] FastAPI backend with a `/trace` endpoint: `{language, code, input}` → trace JSON
+- [x] Docker image with `gcc`, `g++`, `gdb`
+- [x] Sandbox limits: no network, memory/CPU limits, time limit, non-root user, read-only filesystem except a temp folder
+- [x] Frontend: send C/C++ code to the backend; Python still runs in the browser
 
 ### Tracer (Week 10–11)
-- [ ] Compile with `gcc -g -O0` (`g++` for C++); show compile errors nicely
-- [ ] Drive GDB in machine-interface mode (GDB/MI): `-exec-next` / `-exec-step` until the program ends
-- [ ] At each step read: current line, stack frames, local variables
-- [ ] Output the **same trace JSON** as the Python tracer
-- [ ] Arrays: show values. Pointers: show the address + what it points to
-- [ ] Step limit and timeout (infinite loops), stdin input
-- [ ] Test programs in `tests/programs/c/` and `tests/programs/cpp/` (loop, if/else, function, recursion, array, pointer, infinite loop) + pytest tests
+- [x] Compile with `gcc -g -O0` (`g++` for C++); show compile errors nicely
+- [x] Drive GDB in machine-interface mode (GDB/MI): `-exec-next` / `-exec-step` until the program ends
+- [x] At each step read: current line, stack frames, local variables
+- [x] Output the **same trace JSON** as the Python tracer
+- [x] Arrays: show values. Pointers: show the address + what it points to
+- [x] Step limit and timeout (infinite loops), stdin input
+- [x] Test programs in `tests/programs/c/` and `tests/programs/cpp/` (loop, if/else, function, recursion, array, pointer, infinite loop) + pytest tests
 
 ### Why Engine for C/C++ (Week 12)
-- [ ] Use **tree-sitter** (C and C++ grammars) for reads/writes per line
-- [ ] Reuse the Python Why Engine on the C trace
-- [ ] Document limitations (pointer aliasing, `struct`s, library calls)
+- [x] Use **tree-sitter** (C and C++ grammars) for reads/writes per line
+- [x] Reuse the Python Why Engine on the C trace
+- [x] Document limitations (pointer aliasing, `struct`s, library calls)
 
 **Done when:** all C/C++ test programs step correctly in the UI, and "Why?" works on loop and array programs.
 
 ---
 
-## Phase 3: Diff Engine, simple version [stretch]
+## Phase 3: Diff Engine, simple version [stretch, not built: decided 2026-10-24]
 
 - [ ] Input: student code + reference code + test input
 - [ ] Run both through the tracer
@@ -133,15 +133,15 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 
 ---
 
-## Phase 5: LLM Explainer, simple version [stretch]
+## Phase 5: LLM Explainer, simple version [stretch, built]
 
-- [ ] Add an `/explain` endpoint to the existing FastAPI backend
-- [ ] API key in `.env` only (never in frontend or Git)
-- [ ] Prompt = code + trace window + slice; ask for JSON `{step, explanation, mentioned_values}`
-- [ ] Validator: every mentioned value must match the trace; flag it if not
-- [ ] Cache by hash of code + input; simple rate limit
-- [ ] UI: explanation panel synced with the current step
-- [ ] Measure: % of correct values before vs after the validator (20 programs)
+- [x] Add an `/explain` endpoint to the existing FastAPI backend
+- [x] API key in `.env` only (never in frontend or Git)
+- [x] Prompt = code + trace window + slice; ask for JSON `{step, explanation, mentioned_values}`
+- [x] Validator: every mentioned value must match the trace; flag it if not
+- [x] Cache by hash of code + input; simple rate limit
+- [x] UI: explanation panel synced with the current step
+- [ ] Measure: % of correct values before vs after the validator (20 programs) (script ready: `evaluation/explainer_accuracy.py`, needs your API key)
 
 **Done when:** works on all test programs and accuracy numbers are recorded.
 
@@ -149,10 +149,10 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 
 ## Phase 8: Evaluation (Week 13–14)
 
-- [ ] Prepare 3 buggy programs for the study
+- [x] Prepare 3 buggy programs for the study
 - [ ] Recruit 10–15 juniors; two groups (Kaaran vs print debugging / Python Tutor)
 - [ ] Measure: time to find the bug, success rate, short feedback form
-- [ ] Collect all numbers: tracer correctness (Python and C/C++), slice accuracy, plus diff/explainer accuracy if built
+- [ ] Collect all numbers: tracer correctness (Python and C/C++), slice accuracy, plus diff/explainer accuracy if built (tracer correctness and slice accuracy done: see `docs/evaluation.md`)
 - [ ] Analyse results honestly, including where Kaaran did **worse**
 
 **Done when:** `docs/evaluation.md` has tables and charts for every metric.
@@ -172,9 +172,9 @@ Plan (Mon) ──► Build one small task ──► Test (pytest + tests/program
 
 ## Stretch goals (only if ahead of schedule, in this order)
 
-- [ ] Phase 3: Diff Engine (output comparison first)
-- [ ] Phase 5: LLM explainer
-- [ ] Phase 4: Prediction quiz + 2–3 misconception rules (copy vs alias, `range()` off-by-one)
+- [ ] Phase 3: Diff Engine (output comparison first): not built
+- [x] Phase 5: LLM explainer
+- [ ] Phase 4: Prediction quiz + 2–3 misconception rules (copy vs alias, `range()` off-by-one): not built
 - [ ] Algorithm visuals: sorting bars, recursion tree
 - [ ] Complexity profiler
 
