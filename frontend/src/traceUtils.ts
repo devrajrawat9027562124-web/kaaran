@@ -1,5 +1,5 @@
 // Small helpers that read the trace for the UI.
-import type { Frame, Step, Trace } from './types'
+import type { ExplainFacts, Frame, Step, Trace, WhyAnswer } from './types'
 
 /** Index of the previous step that ran in the same function call, or -1. */
 export function previousInFrame(trace: Trace, index: number): number {
@@ -63,6 +63,43 @@ export function holdersByObject(step: Step): Map<string, Holder[]> {
 /** "list #3" for "obj_3"; C addresses stay as they are. */
 export function objectLabel(id: string, type: string): string {
   return id.startsWith('obj_') ? `${type} #${id.slice(4)}` : `${type} at ${id}`
+}
+
+/**
+ * The facts the explainer gets for the current position: the step the
+ * narration describes (the line that just ran), the variables before and
+ * after it, and the open Why answer. The backend checks every value the
+ * LLM mentions against exactly these facts.
+ */
+export function explainFacts(trace: Trace, narration: string[], index: number, why: WhyAnswer | null): ExplainFacts {
+  const now = trace.steps[index]
+  let target = index
+  if (now.event === 'line') {
+    const before = previousInFrame(trace, index)
+    if (before >= 0) target = before
+  }
+  const step = trace.steps[target]
+  const after = target !== index ? now.stack.find((f) => f.frame_id === step.frame_id)?.locals ?? null : null
+  const q = why?.question
+  return {
+    language: trace.language,
+    code: trace.code,
+    step: step.step,
+    line: step.line,
+    event: step.event,
+    narration: narrationFor(trace, narration, index),
+    before: Object.fromEntries(step.stack.map((f) => [frameLabel(f), f.locals])),
+    after,
+    output: now.stdout.slice(-2000),
+    why: why && q
+      ? {
+          question: q.name !== undefined ? `Why is ${q.name} = ${q.value}?` : `Why did line ${q.line} run?`,
+          summary: why.summary,
+          chain: why.chain.filter((c) => c.kind !== 'definition').slice(-30)
+            .map((c) => `step ${c.step}, line ${c.line}: ${c.text}`),
+        }
+      : null,
+  }
 }
 
 export function frameLabel(frame: Frame): string {

@@ -326,3 +326,19 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
 @media (prefers-reduced-motion: no-preference) {
   .vars tr.changed .value { transition: background 0.2s; }
 }
+
+/* ---------- Explain this step (LLM, checked against the trace) ---------- */
+
+.explain { margin: 6px 0 4px; }
+.explain-button {
+  min-height: 30px;
+  border-color: var(--ink);
+  color: var(--ink);
+  background: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.explain-result { padding: 10px 12px; border: 1px dashed var(--rule-strong); border-radius: var(--radius); }
+.explain-result p + p { margin-top: 6px; }
+.checked { font-size: 0.8125rem; color: var(--graphite-2); }
+.unchecked { font-size: 0.8125rem; color: var(--red); }

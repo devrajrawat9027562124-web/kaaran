@@ -1,21 +1,21 @@
-// C and C++ run on the Kaaran backend (compile + GDB in a sandbox);
-// Python runs in the browser and never needs it.
-import type { Language, Trace } from './types'
+// The Kaaran backend: traces C and C++ (compile + GDB in a sandbox) and runs
+// the LLM explainer. Python runs in the browser and never needs it.
+import type { ExplainFacts, ExplainResult, Language, Trace } from './types'
 
 export const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'
 
-export async function traceOnBackend(language: Language, code: string, stdin: string): Promise<Trace> {
+async function post<T>(path: string, body: unknown, what: string): Promise<T> {
   let response: Response
   try {
-    response = await fetch(`${BACKEND_URL}/trace`, {
+    response = await fetch(`${BACKEND_URL}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ language, code, input: stdin }),
+      body: JSON.stringify(body),
     })
   } catch {
     throw new Error(
-      `C and C++ run on the Kaaran backend, and it isn't reachable at ${BACKEND_URL}. ` +
-        'Start it from the backend folder (see the README), then press Run again.',
+      `${what} on the Kaaran backend, and it isn't reachable at ${BACKEND_URL}. ` +
+        'Start it from the backend folder (see the README), then try again.',
     )
   }
   if (!response.ok) {
@@ -25,7 +25,15 @@ export async function traceOnBackend(language: Language, code: string, stdin: st
     } catch {
       // plain text
     }
-    throw new Error(`The backend couldn't trace this program: ${detail}`)
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
   }
-  return (await response.json()) as Trace
+  return (await response.json()) as T
+}
+
+export function traceOnBackend(language: Language, code: string, stdin: string): Promise<Trace> {
+  return post<Trace>('/trace', { language, code, input: stdin }, 'C and C++ run')
+}
+
+export function explainStep(facts: ExplainFacts): Promise<ExplainResult> {
+  return post<ExplainResult>('/explain', facts, 'Explanations are written')
 }

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { traceOnBackend } from './backend'
+import { explainStep, traceOnBackend } from './backend'
 import { BottomPanel } from './components/BottomPanel'
 import { CodeEditor, type LineMarks } from './components/CodeEditor'
+import { ExplainPanel, type ExplainState } from './components/ExplainPanel'
 import { StatePanel } from './components/StatePanel'
 import { StepControls } from './components/StepControls'
 import { WhyPanel } from './components/WhyPanel'
 import { EXAMPLES, defaultProgram } from './examples'
 import { PythonEngine, type EngineStatus } from './python/runner'
-import { narrationFor, previousInFrame, previousLocals } from './traceUtils'
+import { explainFacts, narrationFor, previousInFrame, previousLocals } from './traceUtils'
 import type { Language, Trace, WhyAnswer } from './types'
 
 const PLAY_DELAY_MS = 700
+const NO_EXPLANATION: ExplainState = { loading: false, result: null, error: null }
 
 // What the "input" examples read, so they work on the first Run
 const EXAMPLE_INPUT: Record<Language, string> = { python: 'Asha\n19\n', c: '41\n', cpp: '3 4\n' }
@@ -52,6 +54,8 @@ export default function App() {
   const [whyLoading, setWhyLoading] = useState(false)
   const [whyError, setWhyError] = useState<string | null>(null)
   const [asking, setAsking] = useState<{ name: string; frameIndex: number } | null>(null)
+  const [explanation, setExplanation] = useState<ExplainState>(NO_EXPLANATION)
+  const explainRequest = useRef(0)  // so a late answer can't land on a different step
   const engine = useRef<PythonEngine | null>(null)
 
   useEffect(() => {
@@ -67,15 +71,36 @@ export default function App() {
   const step = trace && count > 0 ? trace.steps[Math.min(index, count - 1)] : null
   const frameIndex = step ? Math.min(frameChoice ?? step.stack.length - 1, step.stack.length - 1) : 0
 
+  const resetExplanation = useCallback(() => {
+    explainRequest.current++
+    setExplanation(NO_EXPLANATION)
+  }, [])
+
   const go = useCallback((target: number) => {
     setIndex(Math.max(0, Math.min(target, count - 1)))
     setFrameChoice(null)
-  }, [count])
+    resetExplanation()
+  }, [count, resetExplanation])
 
   const clearWhy = () => {
     setWhy(null)
     setWhyError(null)
     setAsking(null)
+    resetExplanation()
+  }
+
+  const explain = async () => {
+    if (!trace) return
+    const request = ++explainRequest.current
+    setExplanation({ loading: true, result: null, error: null })
+    try {
+      const result = await explainStep(explainFacts(trace, narration, index, why))
+      if (request === explainRequest.current) setExplanation({ loading: false, result, error: null })
+    } catch (error) {
+      if (request === explainRequest.current) {
+        setExplanation({ loading: false, result: null, error: error instanceof Error ? error.message : String(error) })
+      }
+    }
   }
 
   const run = async () => {
@@ -109,6 +134,7 @@ export default function App() {
     setAsking({ name, frameIndex: frame })
     setWhyLoading(true)
     setWhyError(null)
+    resetExplanation()
     try {
       setWhy(await engine.current.why(step.step, name, frame))
     } catch (error) {
@@ -124,6 +150,7 @@ export default function App() {
     setAsking(null)
     setWhyLoading(true)
     setWhyError(null)
+    resetExplanation()
     try {
       const answer = await engine.current.whyOutput(line)
       setWhy(answer)
@@ -274,6 +301,7 @@ export default function App() {
               <StepControls index={index} count={count} step={step} playing={playing}
                 onGo={go} onTogglePlay={() => setPlaying((p) => !p)} />
               <p className="narration" aria-live="polite">{narrationFor(trace, narration, index)}</p>
+              <ExplainPanel state={explanation} onExplain={explain} />
               <StatePanel
                 step={step}
                 frameIndex={frameIndex}

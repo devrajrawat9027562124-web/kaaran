@@ -1,10 +1,11 @@
-"""Kaaran backend: traces C/C++ programs in a sandbox (and, later, explains
-steps with an LLM).
+"""Kaaran backend: traces C/C++ programs in a sandbox, and explains steps
+with an LLM whose values are checked against the trace.
 
 Python never comes here: it runs in the browser with Pyodide.
 
     GET  /health
-    POST /trace   {"language": "c" | "cpp", "code": "...", "input": "..."}
+    POST /trace    {"language": "c" | "cpp", "code": "...", "input": "..."}
+    POST /explain  the facts of one step (see ExplainRequest) -> explanation
 
 Run from the backend folder:   uvicorn app:app --port 8000
 Settings come from the environment or backend/.env (see .env.example).
@@ -22,7 +23,8 @@ from pydantic import BaseModel, Field
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
-import sandbox  # noqa: E402  (reads settings loaded above)
+import explainer  # noqa: E402  (both read settings loaded above)
+import sandbox  # noqa: E402
 
 MAX_CODE_CHARS = 20_000
 MAX_INPUT_CHARS = 10_000
@@ -67,7 +69,9 @@ class RateLimiter:
 
 
 trace_limiter = RateLimiter(limit=int(os.environ.get("TRACE_RATE_LIMIT", "20")), window=60)
+explain_limiter = RateLimiter(limit=int(os.environ.get("EXPLAIN_RATE_LIMIT", "10")), window=60)
 runs = asyncio.Semaphore(MAX_PARALLEL_RUNS)
+explanations = explainer.Explainer()
 
 
 class TraceRequest(BaseModel):
@@ -76,13 +80,46 @@ class TraceRequest(BaseModel):
     input: str = Field(default="", max_length=MAX_INPUT_CHARS)
 
 
+class WhyFacts(BaseModel):
+    question: str = Field(max_length=500)
+    summary: str = Field(max_length=4000)
+    chain: list[str] = Field(default_factory=list, max_length=40)
+
+
+class ExplainRequest(BaseModel):
+    """One step, as the frontend reads it from the trace."""
+    language: Literal["python", "c", "cpp"]
+    code: str = Field(max_length=MAX_CODE_CHARS)
+    step: int
+    line: int
+    event: str = Field(max_length=20)
+    narration: str = Field(max_length=2000)
+    before: dict[str, dict[str, str]] = Field(max_length=50)   # frame -> variables
+    after: dict[str, str] | None = None
+    output: str = Field(default="", max_length=2000)
+    why: WhyFacts | None = None
+
+
 def client_address(request: Request):
     return request.client.host if request.client else "unknown"
 
 
 @app.get("/health")
 def health():
-    return {"ok": True, "sandbox": sandbox.mode()}
+    return {"ok": True, "sandbox": sandbox.mode(), "explainer": explainer.available()}
+
+
+@app.post("/explain")
+async def explain(body: ExplainRequest, request: Request):
+    if not explainer.available():
+        raise HTTPException(503, "The explainer isn't set up: add ANTHROPIC_API_KEY to backend/.env "
+                                 "and restart the backend.")
+    if not explain_limiter.allow(client_address(request)):
+        raise HTTPException(429, "Too many explanations in a minute. Wait a little and try again.")
+    try:
+        return await asyncio.to_thread(explanations.explain, body.model_dump())
+    except explainer.ExplainerError as e:
+        raise HTTPException(502, str(e))
 
 
 @app.post("/trace")

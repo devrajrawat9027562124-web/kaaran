@@ -59,6 +59,29 @@ export interface ChainItem {
   text: string
 }
 
+/** What the LLM explainer is told about one step (backend/app.py ExplainRequest). */
+export interface ExplainFacts {
+  language: Language
+  code: string
+  step: number
+  line: number
+  event: Step['event']
+  narration: string
+  before: Record<string, Record<string, string>>
+  after: Record<string, string> | null
+  output: string
+  why: { question: string; summary: string; chain: string[] } | null
+}
+
+export interface ExplainResult {
+  explanation: string
+  verified: boolean
+  problems: { name: string; value: string; trace_has: string[] }[]
+  retried: boolean
+  cached: boolean
+  model: string
+}
+
 export interface WhyAnswer {
   question: { step: number; name?: string; frame?: string; value?: string; line?: number; output?: string }
   summary: string
