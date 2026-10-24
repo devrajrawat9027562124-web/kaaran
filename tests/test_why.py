@@ -131,3 +131,29 @@ def test_unknown_variable_raises():
     except KeyError:
         return
     raise AssertionError("expected KeyError")
+
+
+def test_answer_never_mentions_values_from_later():
+    """Asked inside average(), the call line `result = average(marks)` hasn't
+    finished: the answer must not reveal what result will become."""
+    e, _ = engine("15_average_bug.py")
+    at = next(n for n, s in e.steps.items() if s["event"] == "line" and s["line"] == 5)
+    answer = e.why(at, "total")
+    assert "53.3" not in " ".join(c["text"] for c in answer["chain"])
+    call_line = next(c for c in answer["chain"] if c["line"] == 9)
+    assert "average()" in call_line["text"]
+
+
+def test_outer_variable_not_set_while_its_line_is_still_running():
+    code = "x = 1\ndef f():\n    return x + 1\nx = f()\n"
+    e, _ = engine(code=code)
+    inside = next(n for n, s in e.steps.items() if s["event"] == "line" and s["line"] == 3)
+    # reading x inside f gets it from `x = 1`, not from the unfinished `x = f()`
+    sources = e._sources(e.steps[inside], "x", inside)
+    assert [e.steps[n]["line"] for n in sources] == [1]
+
+
+def test_function_definitions_are_marked():
+    e, last = engine("03_function.py")
+    first = e.explain_step(1)
+    assert first["kind"] == "definition" and first["text"] == "defined function square"

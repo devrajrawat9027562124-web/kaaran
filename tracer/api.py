@@ -39,3 +39,8 @@ def why_step(step):
 
 def why_output(line_index):
     return json.dumps(_engine.why_output(line_index))
+
+
+def explain_all():
+    """One plain-language sentence per step, for the step-by-step narration."""
+    return json.dumps([_engine.explain_step(n)["text"] for n in sorted(_engine.steps)])

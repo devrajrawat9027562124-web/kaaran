@@ -59,10 +59,10 @@ class WhyEngine:
                     self.deps[last_line[caller_of[fid]]].add(n)
 
             for name in step.get("reads", ()):
-                deps.update(self._sources(step, name, n - 1))
+                deps.update(self._sources(step, name, n))
             for obj in step.get("mutates", ()):
                 # the object's new state builds on its old state
-                previous = _last(self.mutators.get(obj), n - 1)
+                previous = self._visible(self.mutators.get(obj), n)
                 if previous:
                     deps.add(previous)
             parent = step.get("control_parent")
@@ -98,23 +98,38 @@ class WhyEngine:
                 return frame
         return None
 
-    def _sources(self, step, name, bound):
-        """Steps (up to `bound`) that gave variable `name` its value as seen
-        by `step`: its last write, and the last change to anything it refers to."""
+    def _sources(self, step, name, at):
+        """Steps that gave variable `name` the value it has at step `at`: its
+        last write, and the last change to anything it refers to."""
         frame = self._read_frame(step, name)
         if frame is None:
             return []  # a builtin like print, or not defined yet
         found = []
-        writer = _last(self.writers.get((frame["frame_id"], name)), bound)
+        writer = self._visible(self.writers.get((frame["frame_id"], name)), at)
         if writer:
             found.append(writer)
         ref = frame.get("refs", {}).get(name)
         if ref is not None:
             for obj in _reachable(ref, step.get("heap", {})):
-                changer = _last(self.mutators.get(obj), bound)
+                changer = self._visible(self.mutators.get(obj), at)
                 if changer:
                     found.append(changer)
         return found
+
+    def _visible(self, steps, at):
+        """Latest step in `steps` whose change can be seen at step `at`.
+
+        A call sets its parameters at once. A line's changes only show once
+        its frame moves on: `x = f()` hasn't set x while f is still running.
+        """
+        i = bisect.bisect_right(steps or [], at)
+        while i:
+            i -= 1
+            n = steps[i]
+            done = n if self.steps[n]["event"] == "call" else self.next_in_frame.get(n)
+            if done is not None and done <= at:
+                return n
+        return None
 
     # ---------- Questions ----------
 
@@ -127,12 +142,8 @@ class WhyEngine:
         frame = s["stack"][frame_index]
         if name not in frame["locals"]:
             raise KeyError(f"{name} is not a variable of {frame['func']} at step {step}")
-        # Locals at a "line" step are from before the line runs; at a "call"
-        # step the parameters were just set by the call itself.
-        own_call = s["event"] == "call" and frame["frame_id"] == s["frame_id"]
-        bound = step if own_call else step - 1
         view = dict(s, stack=[frame])  # read `name` from exactly this frame
-        origins = set(self._sources(view, name, bound))
+        origins = set(self._sources(view, name, step))
         steps = self._closure(origins, limit=step)
         return {
             "question": {"step": step, "name": name, "frame": frame["func"],
@@ -141,7 +152,7 @@ class WhyEngine:
             "origins": sorted(origins),
             "slice": sorted(steps),
             "lines": sorted({self.steps[n]["line"] for n in steps}),
-            "chain": [self.explain_step(n) for n in sorted(steps)],
+            "chain": [self.explain_step(n, at=step) for n in sorted(steps)],
         }
 
     def why_step(self, step):
@@ -156,7 +167,7 @@ class WhyEngine:
             "origins": sorted(self.deps[step]),
             "slice": sorted(steps),
             "lines": sorted({self.steps[n]["line"] for n in steps}),
-            "chain": [self.explain_step(n) for n in sorted(steps)],
+            "chain": [self.explain_step(n, at=end) for n in sorted(steps)],
         }
 
     def output_step(self, line_index):
@@ -183,7 +194,12 @@ class WhyEngine:
 
     def why_output(self, line_index):
         n = self.output_step(line_index)
-        return self.why_step(n) if n else None
+        if not n:
+            return None
+        answer = self.why_step(n)
+        last = self.steps[max(self.steps)]["stdout"].split("\n")
+        answer["question"]["output"] = last[line_index] if line_index < len(last) else ""
+        return answer
 
     def _closure(self, start, limit):
         """Everything `start` depends on, transitively. Steps after `limit`
@@ -204,7 +220,9 @@ class WhyEngine:
             return self.source[line - 1].strip()
         return ""
 
-    def explain_step(self, n):
+    def explain_step(self, n, at=None):
+        """One sentence about step n. With `at`, only what was known by step
+        `at` (a line that was still running then is described as such)."""
         s = self.steps[n]
         func = s["stack"][-1]["func"]
         event = s["event"]
@@ -220,7 +238,11 @@ class WhyEngine:
         elif event == "exception":
             text, kind = f"error: {s.get('exception', '')}", "error"
         else:
-            text, kind = self._explain_line(n)
+            done = self.next_in_frame.get(n)
+            if at is not None and (done is None or done > at):
+                text, kind = self._explain_running(n, at), "call"
+            else:
+                text, kind = self._explain_line(n)
         return {"step": n, "line": s["line"], "code": self.code(s["line"]),
                 "event": event, "func": func, "kind": kind, "text": text}
 
@@ -244,6 +266,9 @@ class WhyEngine:
         printed = self._printed(n)
         after = self._after(n)
         parts = []
+        defined = [(k, v) for k, v in written if v.startswith(("function ", "class "))]
+        if defined and len(defined) == len(written) and not changed and not printed:
+            return "defined " + ", ".join(v.split(" ", 1)[0] + " " + k for k, v in defined), "definition"
         if written:
             parts.append(f"set {_pairs(written)}")
         if changed:
@@ -258,6 +283,11 @@ class WhyEngine:
         if parts:
             return " and ".join(parts) + using, "data"
         return "ran" + using, "data"
+
+    def _explain_running(self, n, at):
+        calls = [f"{self.steps[c]['stack'][-1]['func']}()" for c in self.controlled.get(n, ())
+                 if c <= at and self.steps[c]["event"] == "call"]
+        return "called " + ", ".join(calls) + " and was still waiting for it" if calls else "was still running"
 
     def _outcome(self, n):
         """True if an if-condition at step n was true (its body ran)."""
@@ -373,14 +403,6 @@ class WhyEngine:
                     f"are the same {kind}, so changing {alias} also changes {name}")
         return (f"{where} changed the {kind} that {name} refers to, through {alias} "
                 f"(the {kind} {name} refers to is inside {alias})")
-
-
-def _last(steps, bound):
-    """Latest step in a sorted list that is <= bound, or None."""
-    if not steps:
-        return None
-    i = bisect.bisect_right(steps, bound)
-    return steps[i - 1] if i else None
 
 
 def _reachable(ref, heap):
