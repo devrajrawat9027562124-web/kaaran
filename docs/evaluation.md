@@ -1,11 +1,11 @@
 # Evaluation
 
-Every number below comes from a script in `evaluation/` that was actually run, and the table says where (Windows = the developer's laptop, Linux = GitHub Actions CI, commit `9d74d84`). Nothing marked "not run" has results yet: those are for you to run.
+Every number below comes from a script in `evaluation/` that was actually run, and the table says where (Windows = the developer's laptop, Linux = GitHub Actions CI, commit `662fcf3`). Nothing marked "not run" has results yet: those are for you to run.
 
 | Metric | Result | How it was measured | Status |
 |---|---|---|---|
 | Automated tests | 124 passing | `python -m pytest tests` (Windows), plus 4 CI jobs on Linux | Done |
-| Tracer correctness | **52/52** programs behave identically traced and untraced (Windows; 49/49 on Linux before 3 programs were added) | `evaluation/tracer_correctness.py` | Done |
+| Tracer correctness | **52/52** programs behave identically traced and untraced (Windows and Linux) | `evaluation/tracer_correctness.py` | Done |
 | Slice accuracy | precision **0.98**, recall **1.00**, exact **19/20** (Windows and Linux) | `evaluation/slicing/score.py` | Done; labels need checking (below) |
 | Sandbox safety | Writing outside `/tmp`: blocked. Network: blocked | `backend/sandbox_check.py` (Linux, Docker) | Done |
 | Speed | Python: 2000 steps in 0.02 s; Why answer in 4 ms. C in Docker: 1000 steps in 1.5 s (Linux); C with GDB 7.6: ~15 steps/s (Windows) | measured ad hoc; sandbox numbers from `sandbox_check.py` | Done |
