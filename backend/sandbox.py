@@ -20,7 +20,9 @@ import uuid
 
 RUNNER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runner")
 IMAGE = os.environ.get("KAARAN_RUNNER_IMAGE", "kaaran-runner")
-TIMEOUT = 40  # seconds; the tracer stops itself after 15
+# The tracer stops itself after KAARAN_TIME_LIMIT seconds (default 15);
+# compiling and starting the container get extra time on top
+TIMEOUT = float(os.environ.get("KAARAN_TIME_LIMIT", "15")) + 25
 
 
 class SandboxError(Exception):
