@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { updateProgram, type Program, type ProgramFields, type Session } from '../account'
 import { BackendError } from '../backend'
 import { linkTo } from '../router'
+import { FeedbackDialog } from './FeedbackDialog'
 import { ProgramsDialog, type DialogMode } from './ProgramsDialog'
+import { useDismiss } from '../useDismiss'
+import { ThemeMenu, ThemePicker } from './ThemePicker'
 
 interface Props {
   session: Session | null
   current: Omit<ProgramFields, 'title'>       // the program in the editor
   saved: { id: number; title: string } | null  // the saved program it was opened from, if any
+  step: number | null                          // the step being looked at, for feedback
   onSaved: (program: Program) => void
   onOpen: (program: Program) => void
   onSignOut: () => void
@@ -17,25 +21,21 @@ function initials(name: string): string {
   return name.split(' ').filter(Boolean).slice(0, 2).map((word) => word[0].toUpperCase()).join('')
 }
 
-/** The top bar's account corner: Log in / Sign up, or Save, My programs and the account menu. */
-export function AccountBar({ session, current, saved, onSaved, onOpen, onSignOut }: Props) {
-  const [dialog, setDialog] = useState<DialogMode | null>(null)
+/**
+ * The top bar's account corner. Guests: Theme, Log in, Sign up. Logged in:
+ * Save, My programs, and the profile menu (feedback, theme, log out).
+ */
+export function AccountBar({ session, current, saved, step, onSaved, onOpen, onSignOut }: Props) {
+  const [dialog, setDialog] = useState<DialogMode | 'feedback' | null>(null)
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [error, setError] = useState<string | null>(null)
   const menu = useRef<HTMLDetailsElement | null>(null)
-
-  // The account menu closes when you click anywhere else
-  useEffect(() => {
-    const away = (e: PointerEvent) => {
-      if (menu.current?.open && !menu.current.contains(e.target as Node)) menu.current.open = false
-    }
-    document.addEventListener('pointerdown', away)
-    return () => document.removeEventListener('pointerdown', away)
-  }, [])
+  useDismiss(menu)
 
   if (!session) {
     return (
       <div className="account">
+        <ThemeMenu />
         <a className="nav-link" href={linkTo('login')}>Log in</a>
         <a className="button-link primary" href={linkTo('signup')} title="An account saves your programs">Sign up</a>
       </div>
@@ -62,6 +62,11 @@ export function AccountBar({ session, current, saved, onSaved, onOpen, onSignOut
     }
   }
 
+  const openFeedback = () => {
+    if (menu.current) menu.current.open = false
+    setDialog('feedback')
+  }
+
   return (
     <div className="account">
       <button type="button" className={saving === 'saved' ? 'quiet save done' : 'quiet save'} onClick={save}
@@ -70,13 +75,20 @@ export function AccountBar({ session, current, saved, onSaved, onOpen, onSignOut
         {saving === 'saving' ? 'Saving…' : saving === 'saved' ? 'Saved' : 'Save'}
       </button>
       <button type="button" className="quiet" onClick={() => setDialog('programs')}>My programs</button>
-      <details className="account-menu" ref={menu}>
-        <summary aria-label={`Account: ${session.user.name}`}>
+      <details className="pop-menu account-menu" ref={menu}>
+        <summary aria-label={`Your profile: ${session.user.name}`} title="Your profile, feedback and theme">
           <span className="avatar" aria-hidden="true">{initials(session.user.name)}</span>
         </summary>
-        <div className="account-pop">
-          <p><strong>{session.user.name}</strong><br />{session.user.email}</p>
-          <button type="button" onClick={onSignOut}>Log out</button>
+        <div className="menu-pop profile-pop">
+          <p className="profile-who"><strong>{session.user.name}</strong><br />{session.user.email}</p>
+          <button type="button" className="menu-item" onClick={openFeedback}>
+            <span className="menu-item-label">Send feedback</span>
+            <span className="menu-item-about">Report a problem with Kaaran or your program, or suggest something</span>
+          </button>
+          <ThemePicker />
+          <button type="button" className="menu-item" onClick={onSignOut}>
+            <span className="menu-item-label">Log out</span>
+          </button>
         </div>
       </details>
       {error && (
@@ -85,7 +97,11 @@ export function AccountBar({ session, current, saved, onSaved, onOpen, onSignOut
           <button type="button" className="quiet" onClick={() => setError(null)}>Dismiss</button>
         </p>
       )}
-      {dialog && (
+      {dialog === 'feedback' && (
+        <FeedbackDialog session={session} current={current} step={step} onClose={() => setDialog(null)}
+          onSessionEnded={onSignOut} />
+      )}
+      {(dialog === 'save' || dialog === 'programs') && (
         <ProgramsDialog mode={dialog} session={session} current={current} onMode={setDialog}
           onSaved={onSaved} onOpen={onOpen} onClose={() => setDialog(null)} onSessionEnded={onSignOut} />
       )}

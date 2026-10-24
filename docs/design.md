@@ -120,7 +120,10 @@ Optional: a student can use everything without an account; an account adds saved
 - **Guessing:** wrong email and wrong password get the same message and take the same time (an unknown email is still checked against a dummy hash); logins and signups are rate-limited per address (`AUTH_RATE_LIMIT`).
 - **Isolation:** every program query includes the user's id, so one student can't read or change another's programs (tested).
 - **Gaps:** no email verification, no password reset, no account deletion yet; the rate limit is in memory, per process.
+- **Feedback:** a `feedback` table (category, message, optionally the program and the step, status, reply). Only logged-in students can send it (5 in 10 minutes each), and each sees only their own reports. `backend/show_feedback.py` lists, shows and resolves reports, with a reply the student then sees.
 - **Frontend:** hash routes (`#/`, `#/login`, `#/signup`, `#/app`) because GitHub Pages serves files only. The tool loads lazily the first time it's opened and then stays loaded, so going to log in and back keeps the program and the run.
+
+**Themes.** All colours are CSS variables, so a theme is one block of values in `index.css` (and an editor theme in `monaco.ts`). `index.html` applies the saved choice before the page draws, so the wrong theme never flashes. Each theme keeps the ink (Why answers) and the highlighter (current line) different colours, and all text meets WCAG AA contrast (4.5:1).
 
 ## 7. Limitations (be ready to discuss these)
 

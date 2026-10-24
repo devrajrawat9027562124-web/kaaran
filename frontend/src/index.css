@@ -1,5 +1,9 @@
 /* Kaaran: an exam answer sheet by day (ruled paper, royal-blue ink, a
-   highlighter), a classroom blackboard by night. Red is kept for errors. */
+   highlighter), a classroom blackboard by night. Red is kept for errors.
+
+   Themes (src/theme.ts sets <html data-theme>): paper (below), sepia,
+   blackboard, night, contrast. Every theme keeps the ink (Why answers) and the
+   highlighter (the current line) clearly different colours. */
 
 :root {
   --paper: #fbfcfe;
@@ -30,8 +34,9 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Blackboard: chosen, or the computer's dark mode before a theme is applied */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --paper: #1e2b26;
     --paper-2: #18231f;
     --rule: #33463e;
@@ -48,6 +53,80 @@
     --highlighter-soft: rgba(242, 212, 92, 0.24);
     color-scheme: dark;
   }
+}
+:root[data-theme="blackboard"] {
+  --paper: #1e2b26;
+  --paper-2: #18231f;
+  --rule: #33463e;
+  --rule-strong: #4a6158;
+  --graphite: #e9eee7;
+  --graphite-2: #a9b8af;
+  --ink: #9db8ff;
+  --on-ink: #13201b;
+  --ink-soft: rgba(157, 184, 255, 0.14);
+  --ink-mid: rgba(157, 184, 255, 0.26);
+  --red: #ff8a7a;
+  --red-soft: rgba(255, 138, 122, 0.14);
+  --highlighter: #f2d45c;
+  --highlighter-soft: rgba(242, 212, 92, 0.24);
+  color-scheme: dark;
+}
+
+/* Sepia: warm paper with less blue light, softer for long reading */
+:root[data-theme="sepia"] {
+  --paper: #f6efdf;
+  --paper-2: #eee4cc;
+  --rule: #e0d3b5;
+  --rule-strong: #c4b18a;
+  --graphite: #3a3127;
+  --graphite-2: #67594a;
+  --ink: #1d5a82;
+  --on-ink: #fffaf0;
+  --ink-soft: rgba(29, 90, 130, 0.1);
+  --ink-mid: rgba(29, 90, 130, 0.2);
+  --red: #a8322a;
+  --red-soft: rgba(168, 50, 42, 0.1);
+  --highlighter: #f0c94f;
+  --highlighter-soft: rgba(240, 201, 79, 0.45);
+  color-scheme: light;
+}
+
+/* Night: dim and warm, no bright white anywhere, for studying late */
+:root[data-theme="night"] {
+  --paper: #1b1916;
+  --paper-2: #151311;
+  --rule: #2e2a25;
+  --rule-strong: #463f36;
+  --graphite: #d9cfbf;
+  --graphite-2: #a0958a;
+  --ink: #a3b1dc;
+  --on-ink: #1b1916;
+  --ink-soft: rgba(163, 177, 220, 0.12);
+  --ink-mid: rgba(163, 177, 220, 0.24);
+  --red: #e88d7c;
+  --red-soft: rgba(232, 141, 124, 0.13);
+  --highlighter: #d4a74a;
+  --highlighter-soft: rgba(212, 167, 74, 0.22);
+  color-scheme: dark;
+}
+
+/* High contrast: black on white and strong colours, for low vision or a bright room */
+:root[data-theme="contrast"] {
+  --paper: #ffffff;
+  --paper-2: #ffffff;
+  --rule: #767676;
+  --rule-strong: #000000;
+  --graphite: #000000;
+  --graphite-2: #1f1f1f;
+  --ink: #0000b8;
+  --on-ink: #ffffff;
+  --ink-soft: rgba(0, 0, 184, 0.12);
+  --ink-mid: rgba(0, 0, 184, 0.26);
+  --red: #a30000;
+  --red-soft: rgba(163, 0, 0, 0.1);
+  --highlighter: #ffe500;
+  --highlighter-soft: #fff176;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -511,9 +590,11 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
 .page-loading { padding: 40px 24px; color: var(--graphite-2); }
 .account { position: relative; display: flex; align-items: center; gap: 6px; }
 .account .save.done { color: var(--ink); }
-.account-menu { position: relative; }
-.account-menu summary { list-style: none; cursor: pointer; border-radius: 50%; }
-.account-menu summary::-webkit-details-marker { display: none; }
+/* Pop-up menus (profile, theme): a <details> with its sheet below the button */
+.pop-menu { position: relative; }
+.pop-menu summary { list-style: none; cursor: pointer; }
+.pop-menu summary::-webkit-details-marker { display: none; }
+.account-menu summary { border-radius: 50%; }
 .avatar {
   display: grid;
   place-items: center;
@@ -526,7 +607,7 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
   font-weight: 700;
 }
 /* Pop-ups sit on the page like a second sheet of paper, not a floating card */
-.account-pop, .account-error {
+.menu-pop, .account-error {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
@@ -537,12 +618,54 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
   background: var(--paper);
+  color: var(--graphite);
   box-shadow: 4px 4px 0 -1px var(--paper-2), 4px 4px 0 0 var(--rule-strong);
 }
-.account-pop { min-width: 220px; }
-.account-pop p { font-size: 0.875rem; overflow-wrap: anywhere; }
+.menu-pop { width: min(310px, calc(100vw - 32px)); max-height: calc(100vh - 80px); overflow-y: auto; }
+.profile-who { font-size: 0.875rem; overflow-wrap: anywhere; padding: 0 4px; }
+.menu-item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 0;
+  padding: 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+.menu-item:hover { background: var(--ink-soft); }
+.menu-item-label { font-weight: 700; }
+.menu-item-about { font-size: 0.8125rem; color: var(--graphite-2); }
 .account-error { width: min(360px, 90vw); border-color: var(--red); color: var(--red); font-size: 0.875rem; }
 .account-error button { justify-self: end; min-height: 28px; }
+
+/* Theme choices: each with a sample of its paper, ink and highlighter */
+.theme-picker { display: grid; gap: 2px; margin: 0; padding: 8px 0 0; border: 0; border-top: 1px solid var(--rule); }
+.theme-picker legend { padding: 0 4px; font-size: 0.8125rem; font-weight: 700; color: var(--graphite-2); }
+.theme-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.theme-option input { position: absolute; opacity: 0; pointer-events: none; }
+.theme-option:hover { background: var(--ink-soft); }
+.theme-option.chosen { border-color: var(--ink); background: var(--ink-soft); }
+.theme-option:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 1px; }
+.theme-text { display: grid; }
+.theme-label { font-size: 0.9375rem; font-weight: 600; }
+.theme-about { font-size: 0.75rem; color: var(--graphite-2); }
+.swatch { flex: none; width: 26px; height: 26px; border: 1px solid var(--rule-strong); border-radius: 50%; }
+.swatch-system { background: linear-gradient(135deg, #fbfcfe 0 50%, #1e2b26 50%); }
+.swatch-paper { background: linear-gradient(135deg, #fbfcfe 0 52%, #2747c7 52% 76%, #ffe45c 76%); }
+.swatch-sepia { background: linear-gradient(135deg, #f6efdf 0 52%, #1d5a82 52% 76%, #f0c94f 76%); }
+.swatch-blackboard { background: linear-gradient(135deg, #1e2b26 0 52%, #9db8ff 52% 76%, #f2d45c 76%); }
+.swatch-night { background: linear-gradient(135deg, #1b1916 0 52%, #a3b1dc 52% 76%, #d4a74a 76%); }
+.swatch-contrast { background: linear-gradient(135deg, #ffffff 0 52%, #0000b8 52% 76%, #ffe500 76%); }
 
 .programs-dialog {
   width: min(560px, calc(100vw - 32px));
@@ -553,6 +676,7 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
   background: var(--paper);
   color: var(--graphite);
 }
+.programs-dialog { overflow-y: auto; }
 .programs-dialog::backdrop { background: rgba(20, 28, 48, 0.4); }
 .dialog-body { display: grid; gap: 12px; padding: 20px 22px; }
 .dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -565,7 +689,36 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
   font-size: 1rem;
   font-weight: 400;
 }
+.dialog-field textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+  resize: vertical;
+}
 .dialog-note { font-size: 0.875rem; color: var(--graphite-2); }
+.dialog-note.counter { justify-self: end; font-weight: 400; }
+
+/* Feedback */
+.feedback-form { display: grid; gap: 14px; }
+.feedback-kinds { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; }
+.feedback-kinds legend { margin-bottom: 6px; font-size: 0.875rem; font-weight: 600; }
+.feedback-kinds label { display: flex; align-items: center; gap: 8px; font-size: 0.9375rem; cursor: pointer; }
+.feedback-kinds input, .attach input { accent-color: var(--ink); }
+.attach { display: flex; align-items: flex-start; gap: 8px; font-size: 0.875rem; cursor: pointer; }
+.attach input { margin-top: 4px; }
+.feedback-sent { display: grid; gap: 8px; }
+.earlier summary { cursor: pointer; font-size: 0.875rem; color: var(--graphite-2); }
+.earlier ul { display: grid; margin: 8px 0 0; padding: 0; list-style: none; }
+.earlier li { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--rule); }
+.earlier-head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8125rem; color: var(--graphite-2); }
+.earlier-message { font-size: 0.875rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.earlier-reply { padding-left: 10px; border-left: 3px solid var(--ink); font-size: 0.875rem; }
+.chip { flex: none; padding: 0 8px; border-radius: 999px; background: var(--rule); color: var(--graphite); font-size: 0.75rem; }
+.chip.resolved { background: var(--ink-soft); color: var(--ink); }
 .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .program-list { list-style: none; margin: 0; padding: 0; max-height: 380px; overflow-y: auto; }
 .program-list li { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--rule); }
@@ -586,7 +739,7 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
 
 @media (prefers-reduced-motion: no-preference) {
   .programs-dialog[open] { animation: rise 0.25s ease-out; }
-  .account-pop { animation: rise 0.2s ease-out; }
+  .pop-menu[open] .menu-pop { animation: rise 0.2s ease-out; }
 }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 

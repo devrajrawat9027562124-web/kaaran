@@ -16,6 +16,9 @@
   background-size: 100% 100%, 100% var(--line);
 }
 
+/* High contrast: plain white, no lines running behind the text */
+:root[data-theme="contrast"] .site { background-image: none; }
+
 .site-nav {
   display: flex;
   align-items: center;

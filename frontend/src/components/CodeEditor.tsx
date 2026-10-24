@@ -2,6 +2,7 @@ import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { useEffect, useRef, useState } from 'react'
 import { monacoReady } from '../monaco'
+import type { Theme } from '../theme'
 import type { Language } from '../types'
 
 export interface LineMarks {
@@ -16,14 +17,19 @@ export interface LineMarks {
 interface Props {
   code: string
   language: Language
-  dark: boolean
+  theme: Theme
   marks: LineMarks
   onChange: (code: string) => void
 }
 
 const MONACO_LANGUAGE: Record<Language, string> = { python: 'python', c: 'c', cpp: 'cpp' }
+// The editor's colours for each page theme (defined in monaco.ts)
+const EDITOR_THEME: Record<Theme, string> = {
+  paper: 'kaaran-light', sepia: 'kaaran-sepia', blackboard: 'kaaran-dark', night: 'kaaran-night',
+  contrast: 'kaaran-contrast',
+}
 
-export function CodeEditor({ code, language, dark, marks, onChange }: Props) {
+export function CodeEditor({ code, language, theme, marks, onChange }: Props) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
   const monacoRef = useRef<typeof Monaco | null>(null)
   const decorations = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null)
@@ -81,7 +87,7 @@ export function CodeEditor({ code, language, dark, marks, onChange }: Props) {
     <Editor
       value={code}
       language={MONACO_LANGUAGE[language]}
-      theme={dark ? 'kaaran-dark' : 'kaaran-light'}
+      theme={EDITOR_THEME[theme]}
       onChange={(value) => onChange(value ?? '')}
       onMount={(editor, monaco) => {
         editorRef.current = editor

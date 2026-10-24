@@ -1,4 +1,5 @@
-"""Student accounts: sign up, log in, and the programs they save.
+"""Student accounts: sign up, log in, the programs they save, and the
+feedback they send (problems with Kaaran or with their program).
 
 Everything is in one SQLite file (KAARAN_DB, by default backend/kaaran.db).
 
@@ -55,7 +56,21 @@ CREATE TABLE IF NOT EXISTS programs (
     updated  REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS programs_by_user ON programs (user_id, updated);
+CREATE TABLE IF NOT EXISTS feedback (
+    id       INTEGER PRIMARY KEY,
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category TEXT NOT NULL,          -- one of FEEDBACK_CATEGORIES
+    message  TEXT NOT NULL,
+    language TEXT,                   -- the program in the editor, if the student attached it
+    code     TEXT,
+    input    TEXT,
+    step     INTEGER,                -- the step they were looking at
+    status   TEXT NOT NULL DEFAULT 'open',  -- open | resolved
+    reply    TEXT,                   -- an answer from whoever runs Kaaran (show_feedback.py)
+    created  REAL NOT NULL
+);
 """
+FEEDBACK_CATEGORIES = ("bug", "wrong-answer", "my-program", "idea", "other")
 
 
 class AccountError(Exception):
@@ -256,3 +271,37 @@ def delete_program(user_id, program_id):
         cursor = db.execute("DELETE FROM programs WHERE id = ? AND user_id = ?", (program_id, user_id))
         if cursor.rowcount == 0:
             raise AccountError(404, "That program isn't in your saved programs.")
+
+
+# ---------- Feedback: problems and ideas, sent from the profile menu ----------
+
+def _feedback(row):
+    return {"id": row["id"], "category": row["category"], "message": row["message"], "step": row["step"],
+            "attached": row["code"] is not None, "status": row["status"], "reply": row["reply"],
+            "created": row["created"]}
+
+
+def send_feedback(user_id, category, message, language=None, code=None, input=None, step=None):
+    message = message.strip()
+    if category not in FEEDBACK_CATEGORIES:
+        raise AccountError(400, "Choose what the feedback is about.")
+    if len(message) < 10:
+        raise AccountError(400, "Tell us a little more (at least 10 characters).")
+    if len(message) > 4000:
+        raise AccountError(400, "Keep it to 4,000 characters.")
+    if code is not None and language not in LANGUAGES:
+        raise AccountError(400, "The language must be Python, C or C++.")
+    with _db() as db:
+        cursor = db.execute("INSERT INTO feedback (user_id, category, message, language, code, input, step, created) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (user_id, category, message, language if code is not None else None, code,
+                             input if code is not None else None, step, time.time()))
+        row = db.execute("SELECT * FROM feedback WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return _feedback(row)
+
+
+def list_feedback(user_id):
+    """The student's own reports, newest first, with any reply."""
+    with _db() as db:
+        rows = db.execute("SELECT * FROM feedback WHERE user_id = ? ORDER BY created DESC", (user_id,)).fetchall()
+        return [_feedback(row) for row in rows]

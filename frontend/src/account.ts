@@ -79,3 +79,35 @@ export const updateProgram = (token: string, id: number, fields: ProgramFields) 
 
 export const deleteProgram = (token: string, id: number) =>
   request<void>('DELETE', `/programs/${id}`, { what: SAVED, token })
+
+// ---------- Feedback (problems with Kaaran or with a program, ideas) ----------
+
+export type FeedbackCategory = 'bug' | 'wrong-answer' | 'my-program' | 'idea' | 'other'
+
+export interface FeedbackReport {
+  id: number
+  category: FeedbackCategory
+  message: string
+  step: number | null
+  attached: boolean       // the program in the editor was sent with it
+  status: 'open' | 'resolved'
+  reply: string | null    // an answer from whoever runs Kaaran
+  created: number
+}
+
+export interface FeedbackFields {
+  category: FeedbackCategory
+  message: string
+  language?: Language
+  code?: string
+  input?: string
+  step?: number | null
+}
+
+const FEEDBACK = 'Feedback is sent'
+
+export const sendFeedback = (token: string, fields: FeedbackFields) =>
+  request<FeedbackReport>('POST', '/feedback', { what: FEEDBACK, token, body: fields })
+
+export const listFeedback = (token: string) =>
+  request<FeedbackReport[]>('GET', '/feedback', { what: FEEDBACK, token })

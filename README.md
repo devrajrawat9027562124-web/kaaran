@@ -23,6 +23,8 @@ Kaaran is a debugging tutor for beginner programmers. Paste a program, step thro
 - **Dry-run table**: the trace table students draw on paper, one row per line run, with columns grouped by function and new values only (or every value). It fills in as you step: a line that calls a function fills in once the call returns. In C/C++ a variable declared without a value is written `?` until something sets it. Click a value to ask why; copy or download it as CSV.
 - **Explain this step** (optional): Claude explains the step in plain words. Every value it mentions is checked against the trace, and wrong ones are flagged.
 - **Accounts (optional)**: a home page, log in and sign up. With an account you can save programs and open them again later; without one, everything else works the same ("Continue as guest"). Accounts are kept by the backend in SQLite, with scrypt-hashed passwords.
+- **Themes for comfortable reading:** Paper, Sepia (warm, less blue light), Blackboard, Night (dim and warm) and High contrast, or follow the computer's light/dark setting. Every theme meets the WCAG AA contrast level. Choose from the profile menu, or the Theme button.
+- **Feedback:** logged-in students can report a problem (with Kaaran or with their program) or suggest something from the profile menu, optionally attaching the program they're on. Whoever runs Kaaran reads and answers it with `backend/show_feedback.py`, and the reply shows in the student's feedback form.
 - **Safe by design:** Python runs in the browser (Pyodide) and endless programs are stopped. C/C++ runs in a locked-down Docker container.
 
 ## How it works

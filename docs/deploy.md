@@ -106,6 +106,8 @@ Then open `https://devrajrawat9027562124-web.github.io/kaaran/`, sign up, save a
 | To | Run (on the VM) |
 |---|---|
 | See the accounts | `sudo -u kaaran /opt/kaaran/backend/.venv/bin/python /opt/kaaran/backend/show_users.py` |
+| Read students' feedback | `sudo -u kaaran /opt/kaaran/backend/.venv/bin/python /opt/kaaran/backend/show_feedback.py` (`--show ID` for one in full) |
+| Answer and close a report | `sudo -u kaaran /opt/kaaran/backend/.venv/bin/python /opt/kaaran/backend/show_feedback.py --resolve ID --reply "..."` |
 | See what the backend is doing | `journalctl -u kaaran -f` (Ctrl+C to stop watching) |
 | Check it's running | `systemctl status kaaran` |
 | List backups | `sudo ls -l /var/backups/kaaran` |

@@ -12,6 +12,18 @@
       href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;700&family=Atkinson+Hyperlegible+Next:wght@400;600;700&display=swap"
     />
     <title>Kaaran</title>
+    <script>
+      // The chosen colour theme, applied before the page draws (src/theme.ts keeps it after)
+      try {
+        var theme = localStorage.getItem('kaaran.theme')
+        if (['paper', 'sepia', 'blackboard', 'night', 'contrast'].indexOf(theme) < 0) {
+          theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'blackboard' : 'paper'
+        }
+        document.documentElement.dataset.theme = theme
+      } catch (e) {
+        // storage blocked: index.css follows the computer's light or dark setting
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

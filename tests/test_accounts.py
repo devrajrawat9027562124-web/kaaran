@@ -35,6 +35,7 @@ def fast_hashes(monkeypatch):
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(accounts, "DB_PATH", str(tmp_path / "kaaran.db"))
     backend.auth_limiter.seen.clear()
+    backend.feedback_limiter.seen.clear()
     return TestClient(backend.app)
 
 
@@ -179,3 +180,65 @@ def test_a_student_cannot_see_or_change_another_students_programs(client):
 def test_programs_are_checked(client, changes, status):
     headers = auth(signup(client)["token"])
     assert client.post("/programs", json={**PROGRAM, **changes}, headers=headers).status_code == status
+
+
+# ---------- Feedback ----------
+
+REPORT = {"category": "wrong-answer", "message": "The Why answer for total skips line 3.",
+          "language": "python", "code": "total = 0\n", "input": "", "step": 7}
+
+
+def test_feedback_is_stored_with_the_attached_program(client):
+    headers = auth(signup(client)["token"])
+    sent = client.post("/feedback", json=REPORT, headers=headers)
+    assert sent.status_code == 201
+    assert sent.json()["status"] == "open" and sent.json()["attached"] is True
+    db = sqlite3.connect(accounts.DB_PATH)
+    stored = db.execute("SELECT category, message, language, code, step FROM feedback").fetchone()
+    db.close()
+    assert stored == ("wrong-answer", REPORT["message"], "python", "total = 0\n", 7)
+
+
+def test_feedback_without_the_program(client):
+    headers = auth(signup(client)["token"])
+    sent = client.post("/feedback", json={"category": "idea", "message": "A dark theme for the terminal, please."},
+                       headers=headers)
+    assert sent.status_code == 201 and sent.json()["attached"] is False
+
+
+def test_feedback_needs_a_login(client):
+    assert client.post("/feedback", json=REPORT).status_code == 401
+    assert client.get("/feedback").status_code == 401
+
+
+@pytest.mark.parametrize("changes, message", [
+    ({"message": "  broken "}, "at least 10"),
+    ({"category": "spam"}, "what the feedback is about"),
+    ({"message": "x" * 4001}, "4,000"),
+    ({"language": "java"}, "Python, C or C++"),
+])
+def test_feedback_is_checked(client, changes, message):
+    headers = auth(signup(client)["token"])
+    response = client.post("/feedback", json={**REPORT, **changes}, headers=headers)
+    assert response.status_code == 400 and message in response.json()["detail"]
+
+
+def test_students_see_only_their_own_feedback_and_its_reply(client):
+    asha = auth(signup(client)["token"])
+    ravi = auth(signup(client, name="Ravi", email="ravi@example.com")["token"])
+    report_id = client.post("/feedback", json=REPORT, headers=asha).json()["id"]
+    assert client.get("/feedback", headers=ravi).json() == []
+
+    db = sqlite3.connect(accounts.DB_PATH)  # what show_feedback.py --resolve does
+    with db:
+        db.execute("UPDATE feedback SET status = 'resolved', reply = 'Fixed, thanks!' WHERE id = ?", (report_id,))
+    db.close()
+    [mine] = client.get("/feedback", headers=asha).json()
+    assert (mine["status"], mine["reply"]) == ("resolved", "Fixed, thanks!")
+
+
+def test_feedback_is_rate_limited(client):
+    backend.feedback_limiter.seen.clear()
+    headers = auth(signup(client)["token"])
+    codes = [client.post("/feedback", json=REPORT, headers=headers).status_code for _ in range(6)]
+    assert codes == [201] * 5 + [429]

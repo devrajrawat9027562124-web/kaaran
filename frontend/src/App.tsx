@@ -12,6 +12,7 @@ import { WhyPanel } from './components/WhyPanel'
 import { EXAMPLES, defaultProgram } from './examples'
 import { PythonEngine, type EngineStatus } from './python/runner'
 import { linkTo } from './router'
+import { useTheme } from './theme'
 import {
   declaredWithoutValue, explainFacts, guessLanguage, justRan, narrationFor, previousInFrame, previousLocals, readsInput,
 } from './traceUtils'
@@ -41,18 +42,6 @@ function newSeed(): number {
 /** Typed lines as the program's input: one per line. */
 const toStdin = (lines: string[]) => lines.map((line) => `${line}\n`).join('')
 
-function useDarkMode(): boolean {
-  const query = '(prefers-color-scheme: dark)'
-  const [dark, setDark] = useState(() => window.matchMedia(query).matches)
-  useEffect(() => {
-    const media = window.matchMedia(query)
-    const update = () => setDark(media.matches)
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
-  return dark
-}
-
 interface Props {
   active?: boolean               // false while another page of the site is shown (the tool stays loaded)
   session?: Session | null       // a logged-in student, who can save programs
@@ -60,7 +49,7 @@ interface Props {
 }
 
 export default function App({ active = true, session = null, onSignOut = () => {} }: Props) {
-  const dark = useDarkMode()
+  const { theme } = useTheme()
   const [language, setLanguage] = useState<Language>('python')
   const [code, setCode] = useState(() => defaultProgram('python'))
   const [stdin, setStdin] = useState('')
@@ -453,6 +442,7 @@ export default function App({ active = true, session = null, onSignOut = () => {
         </div>
         <p className={status === 'failed' ? 'status failed' : 'status'} role="status">{statusText}</p>
         <AccountBar session={session} current={{ language, code, input: stdin }} saved={saved}
+          step={trace && !stale && step ? step.step : null}
           onSaved={(program) => setSaved({ id: program.id, title: program.title })} onOpen={openProgram}
           onSignOut={onSignOut} />
       </header>
@@ -463,7 +453,7 @@ export default function App({ active = true, session = null, onSignOut = () => {
             <CodeEditor
               code={code}
               language={language}
-              dark={dark}
+              theme={theme}
               marks={marks}
               onChange={(value) => {
                 setCode(value)

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { User } from '../account'
 import { DryRunDemo } from '../components/DryRunDemo'
+import { ThemeMenu } from '../components/ThemePicker'
 import { linkTo } from '../router'
 
 const REPO = 'https://github.com/devrajrawat9027562124-web/kaaran'
@@ -19,6 +20,7 @@ export function SiteNav({ user, accountLinks = true, children }: NavProps) {
       </a>
       <nav aria-label="Site">
         {children}
+        <ThemeMenu />
         {!accountLinks ? null : user ? (
           <a className="button-link primary" href={linkTo('app')}>Open Kaaran</a>
         ) : (

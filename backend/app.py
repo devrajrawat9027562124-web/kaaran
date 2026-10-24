@@ -13,6 +13,7 @@ Accounts (optional: the tool works without one), see accounts.py:
     POST /auth/login  {"email", "password"}         -> {"token", "user"}
     POST /auth/logout, GET /auth/me                    (Authorization: Bearer <token>)
     GET/POST /programs, GET/PUT/DELETE /programs/{id}  the student's saved programs
+    GET/POST /feedback                                 problems and ideas, and any reply
 
 Run from the backend folder:   uvicorn app:app --port 8000
 Settings come from the environment or backend/.env (see .env.example).
@@ -86,6 +87,8 @@ trace_limiter = RateLimiter(limit=int(os.environ.get("TRACE_RATE_LIMIT", "20")),
 explain_limiter = RateLimiter(limit=int(os.environ.get("EXPLAIN_RATE_LIMIT", "10")), window=60)
 # Logins and signups: slows down guessing passwords
 auth_limiter = RateLimiter(limit=int(os.environ.get("AUTH_RATE_LIMIT", "10")), window=60)
+# Feedback: 5 reports in 10 minutes from one student is plenty
+feedback_limiter = RateLimiter(limit=5, window=600)
 runs = asyncio.Semaphore(MAX_PARALLEL_RUNS)
 explanations = explainer.Explainer()
 
@@ -133,6 +136,16 @@ class ProgramBody(BaseModel):
     language: str = Field(max_length=10)
     code: str = Field(max_length=MAX_CODE_CHARS)
     input: str = Field(default="", max_length=MAX_INPUT_CHARS)
+
+
+class FeedbackBody(BaseModel):
+    category: str = Field(max_length=20)
+    message: str = Field(max_length=5000)
+    # The program in the editor, only if the student chose to attach it
+    language: str | None = Field(default=None, max_length=10)
+    code: str | None = Field(default=None, max_length=MAX_CODE_CHARS)
+    input: str | None = Field(default=None, max_length=MAX_INPUT_CHARS)
+    step: int | None = None
 
 
 def client_address(request: Request):
@@ -217,6 +230,19 @@ def update_program(program_id: int, body: ProgramBody, user=Depends(current_user
 def delete_program(program_id: int, user=Depends(current_user)):
     account_call(accounts.delete_program, user["id"], program_id)
     return Response(status_code=204)
+
+
+@app.post("/feedback", status_code=201)
+def send_feedback(body: FeedbackBody, user=Depends(current_user)):
+    if not feedback_limiter.allow(user["id"]):
+        raise HTTPException(429, "You've sent a lot of feedback in a few minutes. Try again a little later.")
+    return account_call(accounts.send_feedback, user["id"], body.category, body.message, body.language,
+                        body.code, body.input, body.step)
+
+
+@app.get("/feedback")
+def list_feedback(user=Depends(current_user)):
+    return accounts.list_feedback(user["id"])
 
 
 # ---------- Tracing and explaining ----------
