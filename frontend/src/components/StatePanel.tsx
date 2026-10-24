@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Step } from '../types'
-import { frameLabel, holdersByObject, objectLabel, type Holder } from '../traceUtils'
+import { frameLabel, holdersByObject, type Holder } from '../traceUtils'
+import { MemoryView } from './MemoryView'
 
 interface Props {
   step: Step
@@ -55,8 +56,6 @@ export function StatePanel({ step, frameIndex, previous, asking, onSelectFrame, 
   const holders = holdersByObject(step)
   const names = Object.keys(frame.locals)
   const innermost = frameIndex === step.stack.length - 1
-  // Python's shared objects get their own panel; in C/C++ the notes on pointers say it
-  const showObjects = Object.keys(step.heap).length > 0 && step.stack.every((f) => !f.types)
 
   let heading = `Variables in ${frameLabel(frame)}`
   if (innermost && step.event === 'line') heading += `, before line ${step.line} runs`
@@ -136,27 +135,7 @@ export function StatePanel({ step, frameIndex, previous, asking, onSelectFrame, 
         </section>
       )}
 
-      {showObjects && (
-        <section className="panel" aria-labelledby="objects-heading">
-          <h2 id="objects-heading">Objects</h2>
-          <ul className="objects">
-            {Object.entries(step.heap).map(([id, obj]) => {
-              const users = holders.get(id) ?? []
-              return (
-                <li key={id} className={step.mutates.includes(id) ? 'object changing' : 'object'}>
-                  <span className="object-label">{objectLabel(id, obj.type)}</span>
-                  <code className="value">{obj.value}</code>
-                  {users.length > 0 && (
-                    <span className="object-users">
-                      used by {users.map((h) => h.name).join(', ')}
-                    </span>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      )}
+      <MemoryView step={step} frameIndex={frameIndex} />
     </>
   )
 }

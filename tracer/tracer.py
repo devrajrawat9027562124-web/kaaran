@@ -314,13 +314,33 @@ class Recorder:
             if key in heap:
                 continue
             children = [c for c in _children(value) if is_heap_object(c)]
+            fields, edges = self._links(value)
             heap[key] = {
                 "type": type(value).__name__,
                 "value": describe(value),
+                "fields": fields,
+                "edges": edges,
                 "children": [self._object_id(c) for c in children],
             }
             todo.extend(children)
         return heap
+
+    def _links(self, value):
+        """For drawing memory: plain fields of an object, and labelled
+        arrows to the objects it holds (node.next, tree.left, items[2])."""
+        if isinstance(value, dict):
+            pairs = [(_describe(k, 1, frozenset()), v) for k, v in value.items()]
+        elif isinstance(value, list):
+            pairs = [(f"[{i}]", v) for i, v in enumerate(value)]
+        else:
+            pairs = [(k, v) for k, v in (_instance_dict(value) or {}).items() if not k.startswith("__")]
+        fields, edges = {}, []
+        for label, item in pairs[:MAX_ITEMS]:
+            if is_heap_object(item):
+                edges.append({"label": label, "to": self._object_id(item)})
+            elif _instance_dict(value) is not None:  # lists and dicts already show their items
+                fields[label] = describe(item)
+        return fields, edges
 
     def _mutated_objects(self, paths, method_paths, frame):
         found = []

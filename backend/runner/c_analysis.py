@@ -16,6 +16,9 @@ every line, found with tree-sitter instead of Python's ast:
     branch   True in an if-body, False in its else-body
     header   "if", "loop" or None
     returns  True for a return statement (what runs after it is cleanup)
+    input    True if the line reads input (scanf, getchar, cin >> ...)
+    frees    pointers the line frees (free(p), delete p), as paths
+    allocates  True if the line allocates memory (malloc, calloc, new)
 
 analyze() also returns where each variable is declared (so the tracer can
 hide variables whose declaration hasn't run yet) and the program's own
@@ -47,6 +50,9 @@ WRITING_FUNCTIONS = {
 }
 
 INPUT_STREAMS = {"cin", "std::cin"}
+INPUT_FUNCTIONS = {"scanf", "getchar", "gets", "fgets", "getc", "fgetc", "fscanf", "getline",
+                   "getch", "getche", "fread"}
+ALLOCATING_FUNCTIONS = {"malloc", "calloc", "realloc"}
 # Names from <iostream> that look like variables after `using namespace std;`
 STREAM_NAMES = {"cin", "cout", "cerr", "clog", "endl"}
 JUMPS = {"return_statement", "break_statement", "continue_statement", "goto_statement"}
@@ -100,7 +106,8 @@ class _Analyzer:
         if line not in self.lines:
             self.lines[line] = {"reads": [], "writes": [], "mutates": [], "method_mutates": [],
                                 "globals": [], "control": None, "branch": None, "header": None,
-                                "returns": False, "_set": False}
+                                "returns": False, "input": False, "frees": [], "allocates": False,
+                                "_set": False}
         return self.lines[line]
 
     # ---------- Program structure ----------
@@ -226,7 +233,7 @@ class _Analyzer:
                     self.visit_statement(child, line, False)
 
         elif kind == "switch_statement":
-            entry["header"] = "if"
+            entry["header"] = "switch"
             self.collect(node.child_by_field_name("condition"), entry)
             for case in node.child_by_field_name("body").named_children:
                 value = case.child_by_field_name("value")
@@ -395,6 +402,15 @@ class _Analyzer:
             self.visit_call(node, entry)
         elif kind == "binary_expression" and self._is_input(node):
             self.visit_input(node, entry)
+        elif kind == "new_expression":  # C++ new
+            entry["allocates"] = True
+            for child in node.named_children:
+                self.collect(child, entry)
+        elif kind == "delete_expression":  # C++ delete p
+            target = node.named_children[-1] if node.named_children else None
+            if target is not None:
+                _add(entry["frees"], self._path(self._unwrap(target)))
+                self.collect(target, entry)
         elif kind in ("qualified_identifier", "field_identifier", "type_identifier",
                       "namespace_identifier", "string_literal", "char_literal",
                       "number_literal", "true", "false", "null", "sizeof_expression"):
@@ -424,9 +440,16 @@ class _Analyzer:
         # parameters, which the trace records from inside it. A library
         # function can't be traced, so what it writes is decided here.
         library = name is not None and name not in self.functions
+        arguments = args.named_children if args is not None else []
+        if library and name in INPUT_FUNCTIONS:
+            entry["input"] = True
+        if library and name in ALLOCATING_FUNCTIONS:
+            entry["allocates"] = True
+        if library and name == "free" and arguments:
+            _add(entry["frees"], self._path(self._unwrap(arguments[0])))
         written_from = WRITING_FUNCTIONS.get(name) if library else None
         reads_many = name in ("scanf", "fscanf", "sscanf")
-        for i, arg in enumerate(args.named_children if args is not None else []):
+        for i, arg in enumerate(arguments):
             arg = self._unwrap(arg)
             address_of = arg.type == "pointer_expression" and arg.child_by_field_name("operator").type == "&"
             if library and address_of:  # scanf("%d", &x) writes x
@@ -453,6 +476,7 @@ class _Analyzer:
         return self.text(node) in INPUT_STREAMS
 
     def visit_input(self, node, entry):
+        entry["input"] = True
         while node.type == "binary_expression":
             self._target(node.child_by_field_name("right"), entry)
             node = node.child_by_field_name("left")

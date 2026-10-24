@@ -16,7 +16,7 @@ every line number:
              line runs (None at the top level of a function or module)
     branch   True if the line is in an if-body, False if in its else-body
     header   "if" for an if/elif line, "loop" for for/while, "except" for
-             an except line, else None
+             an except line, "switch" for match, else None
 
 This is the only Python-specific part of the Why Engine. The C/C++ adapter
 fills the same fields using tree-sitter.
@@ -147,6 +147,7 @@ def _visit_stmt(stmt, info, control, branch, globals_):
         _visit_body(stmt.body, info, None, None, set())
 
     elif isinstance(stmt, ast.Match):
+        entry["header"] = "switch"
         names.visit(stmt.subject)
         for case in stmt.cases:
             names.visit(case.pattern)

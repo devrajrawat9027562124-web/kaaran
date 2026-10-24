@@ -174,3 +174,53 @@ def test_cpp_method_changes_object_through_this():
     result = run("cpp/05_class.cpp")
     assert result["stdout"] == "5\n"
     assert "this points to c" in why_last(result, "c")["summary"]
+
+
+# ---------- Heap structs, free, menus (pointer-based programs) ----------
+
+def test_heap_structs_and_their_links():
+    result = run("c/12_bst.c")
+    assert result["stdout"] == "50\n"
+    after_inserts = next(s for s in result["steps"] if s["event"] == "line" and s["line"] == 30)
+    nodes = {k: v for k, v in after_inserts["heap"].items() if v.get("kind") == "heap"}
+    assert sorted(v["fields"]["data"] for v in nodes.values()) == ["30", "50", "70"]
+    root = nodes[after_inserts["stack"][-1]["refs"]["root"]]
+    assert sorted(e["label"] for e in root["edges"]) == ["left", "right"]
+
+
+def test_change_through_arrow_belongs_to_the_struct():
+    result = run("c/12_bst.c")
+    engine = WhyEngine(result)
+    line19 = next(s for s in result["steps"] if s["event"] == "line" and s["line"] == 19)
+    assert engine.explain_step(line19["step"])["text"].startswith("changed what root points to")
+
+
+def test_returned_pointer_shows_the_struct():
+    returns = [s["return_value"] for s in run("c/12_bst.c")["steps"]
+               if s["event"] == "return" and s["stack"][-1]["func"] == "insert"]
+    assert returns and all("→ {data =" in value for value in returns)
+
+
+def test_freed_memory_is_marked():
+    result = run("c/12_bst.c")
+    assert result["steps"][-1]["locals"]["old"].endswith("→ freed memory")
+    free_line = next(s for s in result["steps"] if s["event"] == "line" and s["line"] == 32)
+    assert "freed the memory old pointed to" in WhyEngine(result).explain_step(free_line["step"])["text"]
+
+
+def test_why_on_a_pointer_names_the_struct():
+    summary = why_last(run("c/12_bst.c"), "root")["summary"]
+    assert "the struct Node that root points to" in summary
+
+
+def test_menu_without_input_says_input_ran_out():
+    result = run("c/13_menu.c")
+    assert result["truncated"] and "ran out of input at line 7" in result["error"]
+    assert result["error_line"] == 7
+
+
+def test_menu_with_input_and_switch_narration():
+    result = run("c/13_menu.c", "1\n5\n1\n7\n2\n3\n")
+    assert result["error"] is None and "Total: 12" in result["stdout"]
+    switch = next(s for s in result["steps"] if s["event"] == "line" and s["line"] == 11)
+    assert WhyEngine(result).explain_step(switch["step"])["text"] == "went to the case on line 13 (using choice = 1)"

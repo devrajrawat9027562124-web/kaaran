@@ -2,7 +2,7 @@
 
 Run on 2026-10-24, Python 3.14.2, Windows.
 
-**49/49 programs** print exactly the same output (and fail with the same kind of error) when traced as when run normally. Skipped: 06_infinite_loop.py (never ends, by design), 09_infinite_loop.c (never ends, by design).
+**52/52 programs** print exactly the same output (and fail with the same kind of error) when traced as when run normally. Skipped: 06_infinite_loop.py (never ends, by design), 09_infinite_loop.c (never ends, by design).
 
 Two choices are made the same in both runs on purpose: Kaaran's echo of typed input is removed before comparing (a terminal shows it, a pipe doesn't), and the normal C/C++ build uses Kaaran's unbuffered output (otherwise a crashing program loses its last output in a pipe's buffer).
 
@@ -22,6 +22,7 @@ Two choices are made the same in both runs on purpose: Kaaran's echo of typed in
 | tests/programs/13_input.py | 4 | yes |  |
 | tests/programs/14_list_of_lists.py | 5 | yes |  |
 | tests/programs/15_average_bug.py | 14 | yes |  |
+| tests/programs/16_linked_list.py | 32 | yes |  |
 | evaluation/slicing/programs/s01_unrelated.py | 7 | yes |  |
 | evaluation/slicing/programs/s02_loop_sum.py | 15 | yes |  |
 | evaluation/slicing/programs/s03_if_branch.py | 7 | yes |  |
@@ -48,6 +49,8 @@ Two choices are made the same in both runs on purpose: Kaaran's echo of typed in
 | tests/programs/c/08_scanf_input.c | 5 | yes |  |
 | tests/programs/c/10_segfault.c | 4 | yes |  |
 | tests/programs/c/11_global.c | 11 | yes |  |
+| tests/programs/c/12_bst.c | 46 | yes |  |
+| tests/programs/c/13_menu.c | 23 | yes |  |
 | tests/programs/cpp/01_loop.cpp | 11 | yes |  |
 | tests/programs/cpp/02_vector.cpp | 19 | yes |  |
 | tests/programs/cpp/03_reference.cpp | 8 | yes |  |

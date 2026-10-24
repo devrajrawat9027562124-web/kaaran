@@ -17,6 +17,8 @@ Kaaran is a debugging tutor for beginner programmers. Paste a program, step thro
   - "b and a are the same list, so changing a also changes b"
   - "changed x through p: p points to x"
   - "the condition was False (using n = 4)"
+- **Memory view**: linked lists, trees and objects drawn as boxes and arrows (a BST in sorted order), with freed memory marked. It works for `malloc`'d structs in C and objects in Python.
+- **Menu-driven programs**: type the menu choices in the Input tab (one per line). If a program asks for more input than you gave, Kaaran says so instead of reporting an endless loop.
 - **Dry-run table**: the trace table students draw on paper, one row per line run, new values only.
 - **Explain this step** (optional): Claude explains the step in plain words. Every value it mentions is checked against the trace, and wrong ones are flagged.
 - **Safe by design:** Python runs in the browser (Pyodide) and endless programs are stopped. C/C++ runs in a locked-down Docker container.
@@ -70,7 +72,7 @@ CI (`.github/workflows/ci.yml`) runs the tests, the C/C++ tracer with a modern G
 
 | | |
 |---|---|
-| Tracer correctness | 49/49 programs behave the same traced and untraced |
+| Tracer correctness | 52/52 programs behave the same traced and untraced |
 | Why Engine slice accuracy | precision 0.98, recall 1.00 on 20 programs (draft labels: see the caveats) |
 | Sandbox | network and writes outside `/tmp` are blocked |
 | User study, explainer accuracy | not run yet: protocol and scripts in `evaluation/` |

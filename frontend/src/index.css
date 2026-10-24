@@ -342,3 +342,20 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
 .explain-result p + p { margin-top: 6px; }
 .checked { font-size: 0.8125rem; color: var(--graphite-2); }
 .unchecked { font-size: 0.8125rem; color: var(--red); }
+
+/* ---------- Memory: heap objects and the arrows between them ---------- */
+
+.memory-note { font-size: 0.8125rem; color: var(--graphite-2); margin-bottom: 8px; }
+.memory-scroll { overflow-x: auto; padding-bottom: 4px; }
+.memory { display: block; font-family: var(--mono); }
+.memory-node { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; }
+.memory-node.changing { fill: var(--highlighter-soft); }
+.memory-node.freed { stroke: var(--red); stroke-dasharray: 4 3; }
+.memory-type { font-family: var(--font); font-size: 11px; font-weight: 700; fill: var(--graphite-2); }
+.memory-body { font-size: 12px; fill: var(--graphite); }
+.memory-var { font-size: 12px; font-weight: 700; fill: var(--ink); }
+.memory-edge { stroke: var(--graphite-2); stroke-width: 1.4; }
+.memory-arrowhead { fill: var(--graphite-2); }
+.memory-edge-label { font-family: var(--font); font-size: 10px; fill: var(--graphite-2); }
+.memory-list { margin-top: 8px; font-size: 0.875rem; }
+.memory-list summary { cursor: pointer; color: var(--graphite-2); }

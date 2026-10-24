@@ -209,3 +209,11 @@ def test_values_are_cut_short():
     result = trace("big = list(range(1000))\n")
     value = result["steps"][-1]["locals"]["big"]
     assert len(value) <= 200 and "…" in value
+
+
+def test_heap_objects_have_labelled_links():
+    last = run("16_linked_list.py")["steps"][-1]
+    refs = last["stack"][-1]["refs"]
+    head = last["heap"][refs["head"]]
+    assert head["fields"] == {"value": "1"}
+    assert head["edges"] == [{"label": "next", "to": last["heap"][refs["head"]]["children"][0]}]

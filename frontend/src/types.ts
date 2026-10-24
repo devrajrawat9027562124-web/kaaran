@@ -15,6 +15,10 @@ export interface HeapObject {
   type: string
   value: string
   children?: string[]
+  fields?: Record<string, string>              // plain values inside it (data = 50)
+  edges?: { label: string; to: string }[]      // arrows to objects it holds (left, next, [0])
+  kind?: 'heap' | 'variable'                   // C/C++: malloc'd struct, or a variable's memory
+  freed?: boolean                              // C/C++: given to free()/delete
 }
 
 export interface Step {
@@ -34,6 +38,7 @@ export interface Step {
   header?: 'if' | 'loop' | 'except'
   return_value?: string
   exception?: string
+  frees?: string[]  // C/C++: memory this line frees
 }
 
 export interface Trace {
@@ -47,6 +52,7 @@ export interface Trace {
   compile_output?: string
   internal_error?: string
   exit_code?: number  // C/C++ only
+  input_ran_out?: number  // C/C++: line whose read found no more input
 }
 
 export interface ChainItem {

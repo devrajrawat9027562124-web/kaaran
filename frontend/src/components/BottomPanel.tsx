@@ -1,12 +1,13 @@
-import { useState } from 'react'
 import type { Trace } from '../types'
 import { DryRunTable } from './DryRunTable'
 
-type Tab = 'output' | 'input' | 'table'
+export type Tab = 'output' | 'input' | 'table'
 
 interface Props {
   trace: Trace | null
   index: number
+  tab: Tab
+  onTab: (tab: Tab) => void
   stdin: string
   sliceSteps: number[]
   onStdin: (value: string) => void
@@ -14,8 +15,7 @@ interface Props {
   onWhyOutput: (line: number) => void
 }
 
-export function BottomPanel({ trace, index, stdin, sliceSteps, onStdin, onGo, onWhyOutput }: Props) {
-  const [tab, setTab] = useState<Tab>('output')
+export function BottomPanel({ trace, index, tab, onTab: setTab, stdin, sliceSteps, onStdin, onGo, onWhyOutput }: Props) {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'output', label: 'Output' },
     { id: 'input', label: stdin.trim() ? 'Input (given)' : 'Input' },
@@ -87,6 +87,11 @@ function Output({ trace, index, onWhyOutput }: { trace: Trace | null; index: num
       {(atEnd || trace.steps.length === 0) && trace.error && (
         <p className="error-text" role="alert">
           {trace.error_line ? `Line ${trace.error_line}: ` : ''}{trace.error}
+        </p>
+      )}
+      {atEnd && trace.input_ran_out && !trace.error && (
+        <p className="finished">
+          The program asked for more input than the Input tab had (first on line {trace.input_ran_out}).
         </p>
       )}
       {atEnd && !trace.error && (

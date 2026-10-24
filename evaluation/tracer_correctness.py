@@ -29,6 +29,7 @@ from tracer import trace as trace_python  # noqa: E402
 INPUTS = {
     "13_input.py": "Asha\n19\n", "s16_input.py": "Ravi\n20\n",
     "08_scanf_input.c": "41\n", "04_cin_input.cpp": "3 4\n", "s20_scanf.c": "7 3\n",
+    "13_menu.c": "1\n5\n1\n7\n2\n3\n",
 }
 ENDLESS = {"06_infinite_loop.py", "09_infinite_loop.c"}
 

@@ -1,5 +1,5 @@
 // Small helpers that read the trace for the UI.
-import type { ExplainFacts, Frame, Step, Trace, WhyAnswer } from './types'
+import type { ExplainFacts, Frame, Language, Step, Trace, WhyAnswer } from './types'
 
 /** Index of the previous step that ran in the same function call, or -1. */
 export function previousInFrame(trace: Trace, index: number): number {
@@ -104,4 +104,11 @@ export function explainFacts(trace: Trace, narration: string[], index: number, w
 
 export function frameLabel(frame: Frame): string {
   return frame.func === '<module>' ? 'main program' : frame.func === 'globals' ? 'globals' : `${frame.func}()`
+}
+
+/** Does the program read input? Then an empty Input tab means it will run out. */
+export function readsInput(code: string, language: Language): boolean {
+  return language === 'python'
+    ? /\binput\s*\(/.test(code)
+    : /\b(scanf|getchar|gets|fgets|getline|fscanf|getc|fgetc)\s*\(|\bcin\s*>>/.test(code)
 }

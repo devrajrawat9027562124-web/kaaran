@@ -127,3 +127,17 @@ def test_cpp_member_write_mutates_this():
 
 def test_cpp_object_declaration_constructs():
     assert lines(program("cpp/02_vector.cpp"), "cpp")[6]["writes"] == ["v"]
+
+
+def test_input_free_alloc_and_switch_facts():
+    info = lines(program("c/12_bst.c"))
+    assert info[12]["allocates"] and info[12]["writes"] == ["node"]
+    assert info[32]["frees"] == ["old"]
+    menu = lines(program("c/13_menu.c"))
+    assert menu[7]["input"] and menu[8]["input"] and menu[13]["input"]
+    assert menu[11]["header"] == "switch"
+
+
+def test_cpp_new_and_delete():
+    info = lines(wrap("Node *p = new Node();\ndelete p;"), "cpp")
+    assert info[2]["allocates"] and info[3]["frees"] == ["p"]

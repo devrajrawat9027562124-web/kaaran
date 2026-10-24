@@ -50,6 +50,9 @@ How Kaaran works, why it is built this way, and where it falls short. Read with 
   - All variables in every frame, with types.
   - Variables whose declaration hasn't been reached are hidden: their memory is garbage.
   - Pointers show `address → value`, and `std::vector` shows its elements even without GDB's pretty-printers.
+- **Structs on the heap:** a pointer to a struct type (from GDB's `ptype`) leads to a node read from memory, and its pointer fields lead on (a list's `next`, a tree's `left`/`right`), up to 40 nodes. Node regions use the struct's size, so `root->left = …` is a change to the node `root` points to. `free(p)`/`delete p` mark memory as freed, so a dangling pointer shows `→ freed memory`. The UI's Memory panel draws these nodes and arrows (a binary tree in in-order, so a BST reads left to right).
+- **Asking GDB less:** each question costs milliseconds (about 9 ms with GDB 7.6 on Windows), so a caller's variables are listed again only when memory they show has changed. In C a function changes its caller's variables only through pointers, and those changes are recorded. A node is read again only after a line changed it; memory a line changes counts as changing until that line finishes (`root->right = insert(…)` assigns after the call returns).
+- **Input that runs out:** after every line that reads input, the tracer asks `feof(kaaran_stdin)`. If a program then loops forever, which is what a menu does on end of input, the error says the input ran out instead of "infinite loop". The UI also asks for input before running a program that reads some.
 - **Memory instead of objects:** a variable's id is the address of its storage, and a pointer's id is the address of the variable it points into (so `&a[2]` belongs to `a`). Writing `x` also "changes" `&x`. That is why the **unchanged Why Engine** follows `*p = 10` to `x`, references to their targets, and `this->value` to the object.
 - `c_analysis.py` uses **tree-sitter** for the same per-line facts as the Python analysis: `scanf("%d", &x)` and `cin >> x` write `x`, `v.push_back` changes `v`, and inside a method, `value` means `this->value`.
 
@@ -107,7 +110,8 @@ See `backend/README.md`: one container per run, with no network, 256 MB, 1 CPU, 
 | Why Engine | Control dependence is structural (enclosing if/loop, guard clauses); `break`/`continue` deeper in a loop aren't modelled | Possible missed lines |
 | Python | `nonlocal`, class attributes changed through the class, and library functions that mutate arguments (beyond `random.shuffle`, `heapq`, `bisect`) aren't tracked | Possible missed lines |
 | Python | Generators and threads: only the basics | Odd steps |
-| C/C++ | Struct and array changes are tracked per variable, not per field or element | `s.x = 1` affects all of `s` |
+| C/C++ | Struct and array changes are tracked per variable or heap node, not per field or element | `s.x = 1` affects all of `s`; `average` of `marks` depends on `marks[0]` changes it never read |
+| C/C++ | Heap memory is found only through pointers to struct types; a `malloc`'d array of ints is shown only through the pointer's first element, and uninitialised memory shows whatever it holds | Partial memory view |
 | C/C++ | Pointer arithmetic outside a known variable (e.g. into `malloc` memory) is tracked by raw address only | Less precise answers |
 | C/C++ | Library functions writing through pointers: only a known list (`scanf`, `strcpy`, `memset`…) | Possible missed lines |
 | C/C++ | Speed: about 15 steps/s with the old Windows GDB 7.6, much faster with Linux GDB in Docker | Long programs hit the limits |

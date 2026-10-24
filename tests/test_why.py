@@ -157,3 +157,10 @@ def test_function_definitions_are_marked():
     e, last = engine("03_function.py")
     first = e.explain_step(1)
     assert first["kind"] == "definition" and first["text"] == "defined function square"
+
+
+def test_match_is_a_switch():
+    code = "cmd = 2\nmatch cmd:\n    case 1:\n        x = 'one'\n    case 2:\n        x = 'two'\n"
+    e, _ = engine(code=code)
+    header = next(n for n, s in e.steps.items() if s["line"] == 2)
+    assert e.explain_step(header)["text"] == "went to the case on line 6 (using cmd = 2)"

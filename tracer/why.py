@@ -265,6 +265,11 @@ class WhyEngine:
             return "the loop condition was True, so the loop ran again" + using, "control"
         if header == "if":
             return f"the condition was {self._outcome(n)}" + using, "control"
+        if header == "switch":  # a menu's switch (choice): which case ran
+            children = self.controlled.get(n, [])
+            if not children:
+                return "no case matched" + using, "control"
+            return f"went to the case on line {self.steps[children[0]]['line']}" + using, "control"
         if header == "except":
             return "an error was caught here", "control"
         written, changed = self._changes(n)
@@ -277,7 +282,14 @@ class WhyEngine:
         if written:
             parts.append(f"set {_pairs(written)}")
         if changed:
-            parts.append("changed " + ", ".join(f"{k} to {v}" for k, v in changed))
+            types = s["stack"][-1].get("types", {})
+            parts.append("changed " + ", ".join(
+                # C: a pointer's own value didn't change, the struct it points to did
+                f"what {k} points to: {v.split(' → ', 1)[-1]}" if _pointer_type(types.get(k)) else f"{k} to {v}"
+                for k, v in changed))
+        freed = [self._alias(s, obj) or "memory" for obj in s.get("frees", ())]
+        if freed:
+            parts.append("freed the memory " + ", ".join(freed) + " pointed to")
         if printed:
             parts.append(f"printed {printed!r}")
         if after and after["event"] == "return" and "return_value" in after and not parts:
@@ -397,17 +409,25 @@ class WhyEngine:
         kind = heap.get(obj, {}).get("type", "object")
         alias = self._alias(origin, obj)
         alias_ref = origin["stack"][-1].get("refs", {}).get(alias)
+        # C/C++ traces say which variables are pointers or references
+        name_type = _pointer_type(frame.get("types", {}).get(name))
+        alias_type = _pointer_type(origin["stack"][-1].get("types", {}).get(alias))
+        through = f" (through {alias})" if alias and alias != name else ""
         if obj != ref:  # e.g. grid[0][0] = 5 changes a row inside grid
-            through = f" (through {alias})" if alias and alias != name else ""
+            if name_type:  # a node further down a list or tree
+                return f"{where} changed a {kind} that can be reached from {name}{through}"
             return f"{where} changed a {kind} inside {name}{through}"
         if not alias or alias == name:
+            if name_type:
+                return f"{where} changed the {kind} that {name} points to"
             return f"{where} changed {name} in place"
-        # C/C++ traces say which variables are pointers or references
-        alias_type = _pointer_type(origin["stack"][-1].get("types", {}).get(alias))
+        if alias_type and name_type:
+            return (f"{where} changed the {kind} that {name} points to, through {alias} "
+                    f"({alias} and {name} point to the same {kind})")
         if alias_type:
             how = "is a reference to" if alias_type == "&" else "points to"
             return f"{where} changed {name} through {alias}: {alias} {how} {name}"
-        if _pointer_type(frame.get("types", {}).get(name)):
+        if name_type:
             return f"{where} changed {alias}, which {name} points to"
         if alias_ref == obj:
             return (f"{where} changed the {kind} that {name} refers to. {alias} and {name} "

@@ -26,6 +26,8 @@ Every language adapter (Python now, C/C++ next, Java later) outputs this **same*
 | `error_line` | Line of the error, if known |
 | `truncated` | `true` if the step limit stopped the program |
 | `compile_output` | C/C++ only: compiler messages |
+| `exit_code` | C/C++ only: what `main` returned |
+| `input_ran_out` | C/C++ only: line whose read found the input used up (a menu program given too little input) |
 
 ## One step
 
@@ -58,14 +60,15 @@ Every language adapter (Python now, C/C++ next, Java later) outputs this **same*
 | `locals` | Variables of the current function (same as the last `stack` entry) |
 | `stack` | Call frames, outermost first, each with `func`, `frame_id`, current `line`, `locals` and `refs` |
 | `refs` | For variables that hold a shared (mutable) object: variable → object id, e.g. `{"a": "obj_1", "b": "obj_1"}` means `a` and `b` are the **same** list |
-| `heap` | Shared objects by id: `{"obj_1": {"type": "list", "value": "[1, 2]", "children": []}}`. `children` are objects inside it (a list of lists) |
+| `heap` | Shared objects by id: `{"obj_1": {"type": "list", "value": "[1, 2]", "children": []}}`. `children` are objects inside it (a list of lists); `fields` are its plain values (`{"data": "50"}`) and `edges` its labelled arrows to other objects (`[{"label": "left", "to": "0x…"}]`), used to draw memory. C/C++ adds `kind` (`heap` for a struct from malloc/new, `variable` for a variable's own memory) and `freed` |
 | `stdout` | All output printed **before** this step |
 | `reads` / `writes` | Variables this line uses / rebinds |
 | `mutates` | Object ids this line changes in place (`a.append(3)`, `a[0] = 1`, `self.x = 1`) |
 | `globals` | (optional) Names this line writes in the outermost frame (`global count`) |
 | `control_parent` | Step of the `if`/`for`/`while` (or the function call) that made this line run |
 | `branch` | (optional) `true` if the line is in an if-body, `false` if in its else-body |
-| `header` | (optional) `"if"`, `"loop"` or `"except"` for those header lines |
+| `header` | (optional) `"if"`, `"loop"`, `"switch"` (C `switch`, Python `match`) or `"except"` for those header lines |
+| `frees` | (optional, C/C++) memory this line frees (`free(p)`, `delete p`) |
 | `return_value` | (`return` events) What the function returned |
 | `exception` | (`exception` events) The error raised here |
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { explainStep, traceOnBackend } from './backend'
-import { BottomPanel } from './components/BottomPanel'
+import { BottomPanel, type Tab } from './components/BottomPanel'
 import { CodeEditor, type LineMarks } from './components/CodeEditor'
 import { ExplainPanel, type ExplainState } from './components/ExplainPanel'
 import { StatePanel } from './components/StatePanel'
@@ -8,7 +8,7 @@ import { StepControls } from './components/StepControls'
 import { WhyPanel } from './components/WhyPanel'
 import { EXAMPLES, defaultProgram } from './examples'
 import { PythonEngine, type EngineStatus } from './python/runner'
-import { explainFacts, narrationFor, previousInFrame, previousLocals } from './traceUtils'
+import { explainFacts, narrationFor, previousInFrame, previousLocals, readsInput } from './traceUtils'
 import type { Language, Trace, WhyAnswer } from './types'
 
 const PLAY_DELAY_MS = 700
@@ -16,6 +16,8 @@ const NO_EXPLANATION: ExplainState = { loading: false, result: null, error: null
 
 // What the "input" examples read, so they work on the first Run
 const EXAMPLE_INPUT: Record<Language, string> = { python: 'Asha\n19\n', c: '41\n', cpp: '3 4\n' }
+// The menu example: add 5, add 7, show the total, exit
+const MENU_INPUT = '1\n5\n1\n7\n2\n3\n'
 
 const LANGUAGES: { id: Language; label: string }[] = [
   { id: 'python', label: 'Python' },
@@ -55,6 +57,8 @@ export default function App() {
   const [whyError, setWhyError] = useState<string | null>(null)
   const [asking, setAsking] = useState<{ name: string; frameIndex: number } | null>(null)
   const [explanation, setExplanation] = useState<ExplainState>(NO_EXPLANATION)
+  const [tab, setTab] = useState<Tab>('output')
+  const [inputHint, setInputHint] = useState(false)
   const explainRequest = useRef(0)  // so a late answer can't land on a different step
   const engine = useRef<PythonEngine | null>(null)
 
@@ -103,8 +107,15 @@ export default function App() {
     }
   }
 
-  const run = async () => {
+  const run = async (evenWithoutInput = false) => {
     if (!engine.current || busy) return
+    if (!evenWithoutInput && !stdin.trim() && readsInput(code, language)) {
+      // A menu program with no input just loops on "invalid choice": ask first
+      setInputHint(true)
+      setTab('input')
+      return
+    }
+    setInputHint(false)
     setBusy(true)
     setPlaying(false)
     setRunError(null)
@@ -217,7 +228,8 @@ export default function App() {
     setTrace(null)
     setRunError(null)
     clearWhy()
-    if (name.toLowerCase().includes('input') && !stdin.trim()) setStdin(EXAMPLE_INPUT[language])
+    if (name.toLowerCase().includes('input')) setStdin(EXAMPLE_INPUT[language])
+    if (name.toLowerCase().includes('menu')) setStdin(MENU_INPUT)
   }
 
   const canRun = !busy && (language !== 'python' || status === 'ready')
@@ -248,7 +260,7 @@ export default function App() {
               {EXAMPLES[language].map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
             </select>
           </label>
-          <button type="button" className="run" onClick={run} disabled={!canRun}>
+          <button type="button" className="run" onClick={() => run()} disabled={!canRun}>
             {busy ? 'Running…' : 'Run'}
           </button>
         </div>
@@ -272,6 +284,8 @@ export default function App() {
           <BottomPanel
             trace={stale ? null : trace}
             index={index}
+            tab={tab}
+            onTab={setTab}
             stdin={stdin}
             sliceSteps={why?.slice ?? []}
             onStdin={setStdin}
@@ -281,6 +295,16 @@ export default function App() {
         </div>
 
         <aside className="right" aria-label="Program state">
+          {inputHint && (
+            <div className="panel notice" role="alert">
+              <p>
+                This program reads input, and the Input tab is empty. Type everything it will read there,
+                one value per line. For a menu, give each choice followed by the values it asks for, and end
+                with the exit choice (for example: 1, 50, 1, 30, 4, 7).
+              </p>
+              <button type="button" className="quiet run-anyway" onClick={() => run(true)}>Run without input</button>
+            </div>
+          )}
           {runError && <p className="panel error-text" role="alert">{runError}</p>}
           {stale && <p className="panel notice">You changed the code. Press Run to step through the new version.</p>}
           {!trace && !runError && (

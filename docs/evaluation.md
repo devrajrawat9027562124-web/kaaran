@@ -4,8 +4,8 @@ Every number below comes from a script in `evaluation/` that was actually run, a
 
 | Metric | Result | How it was measured | Status |
 |---|---|---|---|
-| Automated tests | 113 passing | `python -m pytest tests` (Windows), plus 4 CI jobs on Linux | Done |
-| Tracer correctness | **49/49** programs behave identically traced and untraced (Windows and Linux) | `evaluation/tracer_correctness.py` | Done |
+| Automated tests | 124 passing | `python -m pytest tests` (Windows), plus 4 CI jobs on Linux | Done |
+| Tracer correctness | **52/52** programs behave identically traced and untraced (Windows; 49/49 on Linux before 3 programs were added) | `evaluation/tracer_correctness.py` | Done |
 | Slice accuracy | precision **0.98**, recall **1.00**, exact **19/20** (Windows and Linux) | `evaluation/slicing/score.py` | Done; labels need checking (below) |
 | Sandbox safety | Writing outside `/tmp`: blocked. Network: blocked | `backend/sandbox_check.py` (Linux, Docker) | Done |
 | Speed | Python: 2000 steps in 0.02 s; Why answer in 4 ms. C in Docker: 1000 steps in 1.5 s (Linux); C with GDB 7.6: ~15 steps/s (Windows) | measured ad hoc; sandbox numbers from `sandbox_check.py` | Done |
@@ -14,7 +14,7 @@ Every number below comes from a script in `evaluation/` that was actually run, a
 
 ## Tracer correctness
 
-Does tracing change what a program does? Each of 51 programs (Python, C and C++ from `tests/programs` and `evaluation/slicing/programs`) runs normally and under Kaaran with the same input. Output must match exactly, and errors must be the same kind. The two endless programs are skipped, because the tracer stops them on purpose. Full table: `evaluation/tracer_correctness.md`.
+Does tracing change what a program does? Each of 54 programs (Python, C and C++ from `tests/programs` and `evaluation/slicing/programs`) runs normally and under Kaaran with the same input. Output must match exactly, and errors must be the same kind. The two endless programs are skipped, because the tracer stops them on purpose. Full table: `evaluation/tracer_correctness.md`.
 
 Two things are deliberately made equal before comparing:
 - Kaaran echoes typed input like a terminal, so the echo is removed.

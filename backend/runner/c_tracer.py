@@ -25,10 +25,11 @@ from c_analysis import analyze
 from mi import GDB, MIError, MITimeout
 
 MAX_STEPS = 1000
-TIME_LIMIT = 15.0        # seconds for the whole trace
+TIME_LIMIT = float(os.environ.get("KAARAN_TIME_LIMIT", "15"))  # seconds for the whole trace
 STEP_TIMEOUT = 3.0       # seconds for one `step` (a single line that never ends)
 COMPILE_TIMEOUT = 20
 MAX_VALUE_CHARS = 200
+MAX_HEAP_NODES = 40      # structs from malloc/new shown per step
 
 # Linked into every program: reads input from a file, writes output to a
 # file without buffering (so each step sees what was printed so far). The
@@ -36,9 +37,11 @@ MAX_VALUE_CHARS = 200
 IO_HELPER = r"""
 #include <stdio.h>
 #include <stdlib.h>
+FILE *kaaran_stdin;  /* so the tracer can ask feof(kaaran_stdin): did input run out? */
 __attribute__((constructor)) static void kaaran_io(void) {
     const char *in = getenv("KAARAN_STDIN"), *out = getenv("KAARAN_STDOUT");
-    if (in) freopen(in, "r", stdin);
+    kaaran_stdin = stdin;
+    if (in) kaaran_stdin = freopen(in, "r", stdin);
     if (out) { freopen(out, "a", stdout); freopen(out, "a", stderr); }
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
@@ -53,6 +56,9 @@ SIGNALS = {
 }
 
 HEX = re.compile(r"0x[0-9a-fA-F]+")
+PRIMITIVES = {"int", "char", "short", "long", "float", "double", "bool", "_Bool", "void", "unsigned",
+              "signed", "size_t", "int8_t", "int16_t", "int32_t", "int64_t", "uint8_t", "uint16_t",
+              "uint32_t", "uint64_t", "wchar_t"}
 
 
 def trace(code, language="c", stdin="", max_steps=MAX_STEPS, time_limit=TIME_LIMIT):
@@ -123,8 +129,18 @@ class Frame:
         self.on_return = False   # its current line is a return statement
         self.returning = False   # that return statement finished: only cleanup is left
         self.addresses = {}      # variable -> (address, size), fixed for the call
+        self.listing = None      # its variables as GDB last listed them
+        self.listed_at = None    # the stop it was listed at
+        self.targets = set()     # memory its pointers point into
+        self.changing = set()    # memory its current line changes (until the line ends)
         self.snapshot = None     # the stack when this frame last stopped
         self.heap = {}
+
+    def touched(self, changed):
+        """Did memory this frame shows (its variables, or what its pointers
+        point at) change? Only then does it need listing again."""
+        mine = {address for address, _ in filter(None, self.addresses.values())}
+        return bool(changed & (mine | self.targets))
 
 
 class Stepper:
@@ -143,6 +159,15 @@ class Stepper:
         self.last_at_line = {}      # (frame_id, line) -> latest step there
         self.last_line_step = {}    # frame_id -> latest "line" step
         self.global_addresses = {}
+        self.globals_listing = None
+        self.nodes = {}             # heap address -> struct read from it (until it changes)
+        self.struct_info = {}       # type name -> {"size", "fields"} or None
+        self.changed = set()        # memory changed since the last snapshot (owner addresses)
+        self.freed = set()          # heap addresses given to free()/delete
+        self.pending = {}           # effects of the line that just ran, applied at the next stop
+        self.input_ran_out = None   # line whose read hit the end of the input
+        self.stop_id = 0            # counts GDB stops
+        self.global_types = {}
         self.gdb = None
 
     # ---------- Running ----------
@@ -173,6 +198,16 @@ class Stepper:
         finally:
             self.result["stdout"] = self._stdout()
             self.gdb.close()
+        if self.input_ran_out:
+            self.result["input_ran_out"] = self.input_ran_out
+            if self.result["truncated"]:
+                # The usual reason a menu program "never ends": it needed more input
+                self.result["error"] = (
+                    f"Stopped: the program ran out of input at line {self.input_ran_out} and kept going "
+                    "without it. Type everything it reads in the Input tab, one value per line (for a "
+                    "menu: each choice, then the values it asks for, ending with the exit choice), "
+                    "and run again.")
+                self.result["error_line"] = self.input_ran_out
 
     def _setup(self):
         gdb = self.gdb
@@ -214,6 +249,7 @@ class Stepper:
 
     def _handle(self, stop, back_mid_line=False):
         """Record what this stop means. False when the program has ended."""
+        self.stop_id += 1
         reason = stop.get("reason", "")
         if reason.startswith("exited"):
             self._finish(stop)
@@ -221,6 +257,8 @@ class Stepper:
         if reason == "signal-received":
             self._crash(stop)
             return False
+        if "input_line" in self.pending:
+            self._check_input(self.pending.pop("input_line"))
 
         user = self._user_frames()
         if not user:
@@ -234,7 +272,9 @@ class Stepper:
         returned = depth < len(self.frames)
         value = stop.get("return-value") if reason == "function-finished" else None
         while depth < len(self.frames):
-            self._record_return(self.frames.pop(), value)
+            leaving = self.frames.pop()
+            self.changed |= leaving.changing  # e.g. swap's last line `*b = t` changed the caller's y
+            self._record_return(leaving, value)
             value = None
         if (returned or back_mid_line) and self.frames and line == self.frames[-1].current:
             return True  # back in the middle of a line that hasn't finished: it continues
@@ -254,6 +294,12 @@ class Stepper:
             return True
         self._record_line(line, user)
         return True
+
+    def _check_input(self, line):
+        """After a line that read input: did the read hit the end of it?"""
+        ran_out = self._eval("feof(kaaran_stdin)")
+        if ran_out is not None and ran_out.strip() not in ("0", "") and not self.input_ran_out:
+            self.input_ran_out = line
 
     def _user_frames(self):
         """Frames of the student's program, innermost first."""
@@ -302,6 +348,17 @@ class Stepper:
                 step["header"] = info["header"]
             frame.on_return = info["returns"]
             control_line = info["control"]
+            # What this line changes is only final once the line has run:
+            # `root->left = insert(...)` changes root's node after the call
+            frame.changing = {int(owner, 16) for owner in step["mutates"]}
+            if info["input"]:
+                self.pending["input_line"] = line
+            if info["frees"]:
+                freed = [_target(self._eval(path, 0)) for path in info["frees"]]
+                self.pending["freed"] = [address for address in freed if address]
+                step["frees"] = [_owner(address, self._all_regions()) for address in self.pending["freed"]]
+            if info["allocates"] and info["writes"]:
+                self.pending["allocated"] = (frame.frame_id, list(info["writes"]))
         else:
             control_line = None
         if control_line is not None:
@@ -321,7 +378,11 @@ class Stepper:
         step = self._step(len(self.steps) + 1, frame.current, "return", frame,
                           frame.snapshot, frame.heap)
         if value is not None:
-            step["return_value"] = _display(value, "")
+            shown = _display(value, "")
+            address = _target(shown)
+            if address in self.nodes:  # returned a pointer to a struct: show the struct too
+                shown = f"{shown} → {self.nodes[address]['entry']['value']}"
+            step["return_value"] = shown
         self.steps.append(step)
 
     def _finish(self, stop):
@@ -367,41 +428,50 @@ class Stepper:
             "control_parent": control_parent,
         }
 
-    # ---------- Variables ----------
+    # ---------- Variables and memory ----------
 
     def _snapshot(self):
-        """Every frame's variables (outermost first), plus a globals frame."""
-        stack, regions, values = [], [], {}
-        globals_frame = self._globals(regions)
-        if globals_frame:
-            stack.append(globals_frame)
+        """Every frame's variables (outermost first), a globals frame, and
+        the structs on the heap that pointers lead to.
+
+        Asking GDB costs milliseconds per question, so a caller's variables
+        are listed again only when memory they show has changed: in C a
+        function can change its caller's variables only through pointers,
+        and every such change is recorded (self.changed). Heap structs are
+        read again only after a line changed them.
+        """
+        self._apply_pending()
+        # Memory changed since the last stop, plus memory that unfinished
+        # lines (this one, or callers waiting on a call) are changing
+        changed, self.changed = self.changed, set()
+        for frame in self.frames:
+            changed |= frame.changing
+        for address in changed:
+            self.nodes.pop(address, None)
         depth = len(self.frames)
         for index, frame in enumerate(self.frames):
-            level = depth - 1 - index
-            stack.append(self._frame_snapshot(frame, level, regions, values))
-        # Pointers and references: refer to the variable that holds the address
-        for entry in stack:
-            for name, raw in entry.pop("_pointers", {}).items():
-                entry["refs"][name] = _owner(raw, regions)
-        heap = {}
-        for entry in stack:
-            for name, ref in entry["refs"].items():
-                if ref not in heap and ref in values:
-                    heap[ref] = values[ref]
-        return stack, heap
+            fresh = frame.listed_at == self.stop_id
+            if not fresh and (index == depth - 1 or frame.listing is None or frame.touched(changed)):
+                frame.listing = self._list(frame, depth - 1 - index)
+                frame.listed_at = self.stop_id
+        if self.analysis["globals"] and (self.globals_listing is None or self._globals_touched(changed)):
+            self.globals_listing = self._list_globals()
+        heap = self._read_heap()
+        # Regions include the structs just read, so p->next belongs to *p
+        return self._build_stack(self._all_regions(), heap), heap
 
-    def _frame_snapshot(self, frame, level, regions, values):
+    def _list(self, frame, level):
+        """A frame's variables as GDB shows them: name, type and raw value."""
         try:
             variables = self.gdb.command(
                 f"-stack-list-variables --thread 1 --frame {level} --simple-values")["variables"]
         except MIError:
-            variables = []
+            return frame.listing or []
         declared = self._declared(frame.func)
-        locals_, types, refs, pointers = {}, {}, {}, {}
+        listing = []
         for var in variables:
             name, vtype = var["name"], var.get("type", "")
-            is_arg = var.get("arg") == "1"
-            if not is_arg and name in declared and not _declared_yet(frame, declared[name]):
+            if var.get("arg") != "1" and name in declared and not _declared_yet(frame, declared[name]):
                 continue  # execution hasn't reached its declaration: the value is garbage
             raw = var.get("value")
             if raw is None:
@@ -412,52 +482,182 @@ class Stepper:
                 raw = self._eval(f"*{impl}._M_start@({impl}._M_finish - {impl}._M_start)", level) \
                     if "_M_start = 0x0," not in raw else "{}"
                 raw = raw or "?"
-            locals_[name] = _display(raw, vtype)
-            if _is_plain_pointer(vtype) and locals_[name] not in ("NULL", "?"):
-                # 0x7ffd5c -> 0x7ffd5c → 10 (what the pointer points at)
-                pointee = self._eval(f"*{name}", level)
-                shown = _display(pointee, _base_type(vtype)[:-1]) if pointee is not None else "(invalid memory)"
-                locals_[name] = f"{locals_[name]} → {shown}"
-            types[name] = vtype
             if name not in frame.addresses:
                 frame.addresses[name] = self._address(name, level)
-            address = frame.addresses[name]
-            if address:
-                regions.append((address[0], address[1]))
-                key = _hex(address[0])
-                refs[name] = key
-                values.setdefault(key, {"type": vtype, "value": locals_[name]})
-            if _is_pointer(vtype):
-                target = HEX.search(raw)
-                if target and int(target.group(0), 16) != 0:
-                    pointers[name] = int(target.group(0), 16)
-        line = frame.current if frame.current is not None else frame.entry_line
-        return {"func": frame.func, "frame_id": frame.frame_id, "line": line,
-                "locals": locals_, "refs": refs, "types": types, "_pointers": pointers}
+            entry = {"name": name, "type": vtype, "raw": raw, "address": frame.addresses[name]}
+            if _is_plain_pointer(vtype) and _target(raw) and self._struct(_pointee(vtype)) is None:
+                entry["pointee"] = self._eval(f"*{name}", level)  # e.g. an int in a malloc'd array
+            listing.append(entry)
+        return listing
 
-    def _globals(self, regions):
-        names = self.analysis["globals"]
-        if not names:
-            return None
-        locals_, refs, types = {}, {}, {}
-        for name in names:
+    def _list_globals(self):
+        listing = []
+        for name in self.analysis["globals"]:
             # 'prog.c'::count names the global even if a local hides it
-            value = self._eval(f"'{self.name}'::{name}") or self._eval(name)
-            if value is None:
+            raw = self._eval(f"'{self.name}'::{name}") or self._eval(name)
+            if raw is None:
                 continue
-            locals_[name] = _display(value, "")
-            address = self._global_address(name)
-            if address:
-                regions.append(address)
-                refs[name] = _hex(address[0])
-        return {"func": "globals", "frame_id": 0, "line": None, "locals": locals_,
-                "refs": refs, "types": types, "_pointers": {}}
+            listing.append({"name": name, "type": self._global_type(name), "raw": raw,
+                            "address": self._global_address(name)})
+        return listing
+
+    def _globals_touched(self, changed):
+        return any(entry["address"] and entry["address"][0] in changed for entry in self.globals_listing or [])
+
+    def _global_type(self, name):
+        if name not in self.global_types:
+            self.gdb.try_command(f"-interpreter-exec console \"whatis '{self.name}'::{name}\"")
+            match = re.search(r"type = (.*)", "".join(self.gdb.console))
+            self.global_types[name] = match.group(1).strip() if match else ""
+        return self.global_types[name]
 
     def _global_address(self, name):
         """(address, size) of a global; it never moves, so ask GDB once."""
         if name not in self.global_addresses:
             self.global_addresses[name] = self._address(f"'{self.name}'::{name}", 0) or self._address(name, 0)
         return self.global_addresses[name]
+
+    def _apply_pending(self):
+        """Effects of the line that just ran: freed and newly allocated memory."""
+        for address in self.pending.pop("freed", []):
+            self.freed.add(address)
+            self.nodes.pop(address, None)
+            self.changed.add(address)
+        frame_id, names = self.pending.pop("allocated", (None, []))
+        for index, frame in enumerate(self.frames):
+            if frame.frame_id == frame_id:
+                level = len(self.frames) - 1 - index
+                for name in names:
+                    address = _target(self._eval(name, level))
+                    if address:  # malloc may reuse freed memory: it's alive again
+                        self.freed.discard(address)
+                        self.nodes.pop(address, None)
+                        self.changed.add(address)
+
+    def _struct(self, ctype):
+        """Fields of a struct/class type, from GDB's ptype; None if it isn't one."""
+        ctype = ctype.strip()
+        if ctype not in self.struct_info:
+            info = None
+            if ctype and ctype not in PRIMITIVES and ctype.split()[-1] not in PRIMITIVES:
+                self.gdb.try_command(f'-interpreter-exec console "ptype {ctype}"')
+                text = "".join(self.gdb.console)
+                if re.match(r"type = (struct|class|union)\b", text.strip()):
+                    fields = []
+                    for line in text.splitlines()[1:]:
+                        match = re.match(r"\s*([\w:<>, ]+?)\s*(\**)\s*(\w+)(\[[^\]]*\])?;\s*$", line)
+                        if match and "(" not in line:
+                            fields.append({"name": match.group(3), "base": match.group(1).strip(),
+                                           "pointer": len(match.group(2)) == 1 and not match.group(4)})
+                    size = self._eval(f"sizeof({ctype})")
+                    if size and size.strip().isdigit():
+                        info = {"size": int(size), "fields": fields}
+            self.struct_info[ctype] = info
+        return self.struct_info[ctype]
+
+    def _read_heap(self):
+        """Structs from malloc/new that pointers lead to, following their
+        pointer fields (a linked list's next, a tree's left and right)."""
+        variables = self._variable_regions()
+        todo = []
+        for listing in [self.globals_listing or []] + [f.listing or [] for f in self.frames]:
+            for var in listing:
+                address = _target(var["raw"]) if _is_plain_pointer(var["type"]) else None
+                if address:
+                    todo.append((address, _pointee(var["type"])))
+        heap = {}
+        while todo and len(heap) < MAX_HEAP_NODES:
+            address, ctype = todo.pop(0)
+            key = _hex(address)
+            if key in heap or _inside(address, variables) or self._struct(ctype) is None:
+                continue
+            if address in self.freed:
+                heap[key] = {"type": ctype, "value": "freed memory", "kind": "heap", "freed": True,
+                             "fields": {}, "edges": [], "children": []}
+                continue
+            node = self._node(address, ctype)
+            if node is None:
+                continue
+            heap[key] = node["entry"]
+            todo.extend(node["links"])
+        return heap
+
+    def _node(self, address, ctype):
+        cached = self.nodes.get(address)
+        if cached and cached["entry"]["type"] == ctype:
+            return cached
+        info = self._struct(ctype)
+        raw = self._eval(f"*({ctype} *) {_hex(address)}")
+        if raw is None:
+            return None  # not readable memory (an uninitialised pointer)
+        values = _struct_fields(raw)
+        fields, edges, links = {}, [], []
+        for field in info["fields"]:
+            value = values.get(field["name"])
+            if value is None:
+                continue
+            if field["pointer"]:
+                child = _target(value)
+                if child:
+                    edges.append({"label": field["name"], "to": _hex(child)})
+                    links.append((child, field["base"]))
+            else:
+                fields[field["name"]] = _display(value, "")
+        entry = {"type": ctype, "value": _display(re.sub(r"\b0x0\b", "NULL", raw), ""), "kind": "heap",
+                 "fields": fields, "edges": edges, "children": [e["to"] for e in edges]}
+        self.nodes[address] = {"entry": entry, "size": info["size"], "links": links}
+        return self.nodes[address]
+
+    def _build_stack(self, regions, heap):
+        listings = ([(None, self.globals_listing)] if self.globals_listing else []) + \
+                   [(frame, frame.listing or []) for frame in self.frames]
+        stack, shown, kinds = [], {}, {}
+        for frame, listing in listings:
+            locals_, types, refs = {}, {}, {}
+            for var in listing:
+                name = var["name"]
+                locals_[name] = _display(var["raw"], var["type"])
+                types[name] = var["type"]
+                if var["address"]:
+                    refs[name] = _hex(var["address"][0])
+                    shown.setdefault(refs[name], locals_[name])
+                    kinds.setdefault(refs[name], var["type"])
+            if frame is None:
+                stack.append({"func": "globals", "frame_id": 0, "line": None,
+                              "locals": locals_, "refs": refs, "types": types})
+            else:
+                line = frame.current if frame.current is not None else frame.entry_line
+                stack.append({"func": frame.func, "frame_id": frame.frame_id, "line": line,
+                              "locals": locals_, "refs": refs, "types": types})
+        # Pointers and references refer to the variable or struct they point at
+        for (frame, listing), entry in zip(listings, stack):
+            targets = set()
+            for var in listing:
+                if not _is_pointer(var["type"]):
+                    continue
+                target = _target(var["raw"])
+                if not target:
+                    continue
+                owner = _owner(target, regions)
+                entry["refs"][var["name"]] = owner
+                targets.add(int(owner, 16))
+                if not _is_plain_pointer(var["type"]):
+                    continue
+                if owner in heap:
+                    pointee = heap[owner]["value"]
+                elif owner == _hex(target) and owner in shown:
+                    pointee = shown[owner]
+                elif var.get("pointee") is not None:
+                    pointee = _display(var["pointee"], _pointee(var["type"]))
+                else:
+                    pointee = None
+                if pointee is not None:
+                    entry["locals"][var["name"]] = f"{entry['locals'][var['name']]} → {pointee}"
+            if frame is not None:
+                frame.targets = targets
+        for owner, value in shown.items():  # variables' memory, so answers can name its type
+            heap.setdefault(owner, {"type": kinds[owner], "value": value, "kind": "variable"})
+        return stack
 
     def _declared(self, func):
         declared = self.analysis["declared"]
@@ -479,7 +679,7 @@ class Stepper:
         return int(match.group(0), 16), int(size)
 
     def _mutated(self, info):
-        """Memory this line changes, named by the variable that owns it.
+        """Memory this line changes, named by the variable or struct that owns it.
 
         The paths are side-effect-free lvalues from c_analysis (a[i], *p,
         p->next), so asking GDB for &(path) before the line runs is safe.
@@ -497,15 +697,14 @@ class Stepper:
                     found.append(owner)
         return found
 
+    def _variable_regions(self):
+        regions = [a for frame in self.frames for a in frame.addresses.values() if a]
+        regions += [self._global_address(name) for name in self.analysis["globals"]]
+        return [r for r in regions if r]
+
     def _all_regions(self):
-        regions = []
-        for frame in self.frames:
-            regions.extend(a for a in frame.addresses.values() if a)
-        for name in self.analysis["globals"]:
-            address = self._global_address(name)
-            if address:
-                regions.append(address)
-        return regions
+        """Memory with an owner: variables, then structs read from the heap."""
+        return self._variable_regions() + [(address, node["size"]) for address, node in self.nodes.items()]
 
 
 # ---------- Values ----------
@@ -523,6 +722,53 @@ def _declared_yet(frame, lines):
 
 def _hex(address):
     return f"0x{address:x}"
+
+
+def _target(raw):
+    """The address a pointer value points to, or None for NULL."""
+    match = HEX.search(raw or "")
+    address = int(match.group(0), 16) if match else 0
+    return address or None
+
+
+def _pointee(vtype):
+    """`struct Node *` -> `struct Node`."""
+    return _base_type(vtype)[:-1].strip()
+
+
+def _inside(address, regions):
+    return any(start <= address < start + max(size, 1) for start, size in regions)
+
+
+def _struct_fields(raw):
+    """{data = 50, left = 0x0, name = "a, b"} -> {"data": "50", ...}, split
+    only at the top level (values can hold nested braces and strings)."""
+    text = raw.strip()
+    if not (text.startswith("{") and text.endswith("}")):
+        return {}
+    parts, depth, quote, current = [], 0, None, ""
+    for ch in text[1:-1]:
+        if quote:
+            if ch == quote and not current.endswith("\\"):
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch in "{[(":
+            depth += 1
+        elif ch in "}])":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            parts.append(current)
+            current = ""
+            continue
+        current += ch
+    parts.append(current)
+    fields = {}
+    for part in parts:
+        name, sep, value = part.strip().partition(" = ")
+        if sep:
+            fields[name.strip()] = value.strip()
+    return fields
 
 
 def _owner(address, regions):
@@ -557,7 +803,8 @@ def _display(raw, vtype):
     """GDB's text for a value, made easier to read for a beginner."""
     if raw is None:
         return "?"
-    value = raw.strip()
+    # finish reports pointers as "(struct Node *) 0x..."; the cast is noise here
+    value = re.sub(r"^\([^()]*\)\s*(?=0x|-?\d)", "", raw.strip())
     vtype = _base_type(vtype)
     if vtype.endswith("&"):  # a C++ reference: "@0x7ffd...: 5" -> "5"
         value = value.split(": ", 1)[-1]
