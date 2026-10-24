@@ -10,7 +10,7 @@ interface Props {
 }
 
 function where(step: Step, last: boolean): string {
-  if (last && step.event === 'return' && step.stack.length === 1) return 'program finished'
+  if (last && step.event === 'return') return 'program finished'
   if (step.event === 'call') return `entering ${step.stack[step.stack.length - 1].func}()`
   if (step.event === 'return') return `leaving ${step.stack[step.stack.length - 1].func}()`
   if (step.event === 'exception') return `error on line ${step.line}`

@@ -8,6 +8,7 @@ export interface Frame {
   line: number
   locals: Record<string, string>
   refs?: Record<string, string>
+  types?: Record<string, string>  // C/C++ only
 }
 
 export interface HeapObject {
@@ -45,6 +46,7 @@ export interface Trace {
   truncated: boolean
   compile_output?: string
   internal_error?: string
+  exit_code?: number  // C/C++ only
 }
 
 export interface ChainItem {

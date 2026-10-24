@@ -12,6 +12,9 @@ import type { Language, Trace, WhyAnswer } from './types'
 
 const PLAY_DELAY_MS = 700
 
+// What the "input" examples read, so they work on the first Run
+const EXAMPLE_INPUT: Record<Language, string> = { python: 'Asha\n19\n', c: '41\n', cpp: '3 4\n' }
+
 const LANGUAGES: { id: Language; label: string }[] = [
   { id: 'python', label: 'Python' },
   { id: 'c', label: 'C' },
@@ -187,7 +190,7 @@ export default function App() {
     setTrace(null)
     setRunError(null)
     clearWhy()
-    if (name.toLowerCase().includes('input') && !stdin.trim()) setStdin('Asha\n19\n')
+    if (name.toLowerCase().includes('input') && !stdin.trim()) setStdin(EXAMPLE_INPUT[language])
   }
 
   const canRun = !busy && (language !== 'python' || status === 'ready')

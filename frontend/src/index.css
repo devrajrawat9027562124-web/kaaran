@@ -168,6 +168,13 @@ button.quiet:hover { color: var(--ink); }
 .vars th, .vars td { padding: 5px 0; vertical-align: top; border-bottom: 1px solid var(--rule); }
 .vars th { font-family: var(--mono); font-weight: 700; text-align: left; padding-right: 12px; white-space: nowrap; }
 .vars td { width: 100%; }
+.var-type {
+  display: block;
+  font-family: var(--font);
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--graphite-2);
+}
 .value { font-family: var(--mono); overflow-wrap: anywhere; }
 /* A changed value gets a highlighter stroke, like marking a dry run on paper */
 .vars tr.changed .value { background: linear-gradient(transparent 50%, var(--highlighter-soft) 50%); }

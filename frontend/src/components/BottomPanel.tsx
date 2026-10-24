@@ -89,7 +89,11 @@ function Output({ trace, index, onWhyOutput }: { trace: Trace | null; index: num
           {trace.error_line ? `Line ${trace.error_line}: ` : ''}{trace.error}
         </p>
       )}
-      {atEnd && !trace.error && <p className="finished">The program finished.</p>}
+      {atEnd && !trace.error && (
+        <p className="finished">
+          {trace.exit_code ? `The program finished with exit code ${trace.exit_code}.` : 'The program finished.'}
+        </p>
+      )}
     </div>
   )
 }
