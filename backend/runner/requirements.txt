@@ -1,0 +1,4 @@
+# The C/C++ tracer (c_tracer.py) needs gcc, g++ and gdb on the machine, plus:
+tree-sitter==0.26.0
+tree-sitter-c==0.24.2
+tree-sitter-cpp==0.23.4

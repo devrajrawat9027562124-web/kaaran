@@ -398,11 +398,24 @@ class WhyEngine:
             return f"{where} changed a {kind} inside {name}{through}"
         if not alias or alias == name:
             return f"{where} changed {name} in place"
+        # C/C++ traces say which variables are pointers or references
+        alias_type = _pointer_type(origin["stack"][-1].get("types", {}).get(alias))
+        if alias_type:
+            how = "is a reference to" if alias_type == "&" else "points to"
+            return f"{where} changed {name} through {alias}: {alias} {how} {name}"
+        if _pointer_type(frame.get("types", {}).get(name)):
+            return f"{where} changed {alias}, which {name} points to"
         if alias_ref == obj:
             return (f"{where} changed the {kind} that {name} refers to. {alias} and {name} "
                     f"are the same {kind}, so changing {alias} also changes {name}")
         return (f"{where} changed the {kind} that {name} refers to, through {alias} "
                 f"(the {kind} {name} refers to is inside {alias})")
+
+
+def _pointer_type(ctype):
+    """"*" for a C/C++ pointer type, "&" for a reference, else None."""
+    ctype = (ctype or "").replace("const", "").replace("volatile", "").strip()
+    return ctype[-1] if ctype.endswith(("*", "&")) else None
 
 
 def _reachable(ref, heap):
