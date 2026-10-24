@@ -112,3 +112,19 @@ export function readsInput(code: string, language: Language): boolean {
     ? /\binput\s*\(/.test(code)
     : /\b(scanf|getchar|gets|fgets|getline|fscanf|getc|fgetc)\s*\(|\bcin\s*>>/.test(code)
 }
+
+/**
+ * A guess at the language of some code, from unmistakable signs only
+ * (#include, int main, printf/cout; def/import/print without semicolons).
+ * Null when it isn't clear.
+ */
+export function guessLanguage(code: string): Language | null {
+  if (/#include\s*<(iostream|vector|string|map|bits\/stdc\+\+\.h)>|\bstd::|\bcout\s*<<|\bcin\s*>>|\busing\s+namespace\b/.test(code)) {
+    return 'cpp'
+  }
+  if (/^\s*#include\s*[<"]|\bint\s+main\s*\(|\b(printf|scanf|malloc)\s*\(/m.test(code)) return 'c'
+  if (/^\s*(def\s+\w+\s*\(.*\)\s*:|import\s+\w+|from\s+\w+\s+import\b|print\s*\()/m.test(code) && !/;\s*$/m.test(code)) {
+    return 'python'
+  }
+  return null
+}

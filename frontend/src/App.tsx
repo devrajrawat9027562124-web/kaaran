@@ -8,7 +8,7 @@ import { StepControls } from './components/StepControls'
 import { WhyPanel } from './components/WhyPanel'
 import { EXAMPLES, defaultProgram } from './examples'
 import { PythonEngine, type EngineStatus } from './python/runner'
-import { explainFacts, narrationFor, previousInFrame, previousLocals, readsInput } from './traceUtils'
+import { explainFacts, guessLanguage, narrationFor, previousInFrame, previousLocals, readsInput } from './traceUtils'
 import type { Language, Trace, WhyAnswer } from './types'
 
 const PLAY_DELAY_MS = 700
@@ -24,6 +24,7 @@ const LANGUAGES: { id: Language; label: string }[] = [
   { id: 'c', label: 'C' },
   { id: 'cpp', label: 'C++' },
 ]
+const LABEL: Record<Language, string> = { python: 'Python', c: 'C', cpp: 'C++' }
 
 function useDarkMode(): boolean {
   const query = '(prefers-color-scheme: dark)'
@@ -59,6 +60,7 @@ export default function App() {
   const [explanation, setExplanation] = useState<ExplainState>(NO_EXPLANATION)
   const [tab, setTab] = useState<Tab>('output')
   const [inputHint, setInputHint] = useState(false)
+  const [languageHint, setLanguageHint] = useState<Language | null>(null)
   const explainRequest = useRef(0)  // so a late answer can't land on a different step
   const engine = useRef<PythonEngine | null>(null)
 
@@ -107,9 +109,20 @@ export default function App() {
     }
   }
 
-  const run = async (evenWithoutInput = false) => {
+  /** `as` runs in that language without asking; `withoutInput` skips the input check. */
+  const run = async (options: { as?: Language; withoutInput?: boolean } = {}) => {
     if (!engine.current || busy) return
-    if (!evenWithoutInput && !stdin.trim() && readsInput(code, language)) {
+    const lang = options.as ?? language
+    if (!options.as) {
+      // C code run as Python fails with a baffling Python error: ask first
+      const guess = guessLanguage(code)
+      if (guess && guess !== language) {
+        setLanguageHint(guess)
+        return
+      }
+    }
+    setLanguageHint(null)
+    if (!options.withoutInput && !stdin.trim() && readsInput(code, lang)) {
       // A menu program with no input just loops on "invalid choice": ask first
       setInputHint(true)
       setTab('input')
@@ -122,10 +135,10 @@ export default function App() {
     clearWhy()
     try {
       let result: { trace: Trace; narration: string[] }
-      if (language === 'python') {
+      if (lang === 'python') {
         result = await engine.current.run(code, stdin)
       } else {
-        const fromBackend = await traceOnBackend(language, code, stdin)
+        const fromBackend = await traceOnBackend(lang, code, stdin)
         result = { trace: fromBackend, narration: await engine.current.load(fromBackend) }
       }
       setTrace(result.trace)
@@ -214,8 +227,12 @@ export default function App() {
   }, [trace, step, index, count, why, stale])
 
   const changeLanguage = (next: Language) => {
+    // Keep the student's own code; only an untouched example is swapped for one in the new language
+    const same = (a: string, b: string) => a.replace(/\r\n/g, '\n').trim() === b.replace(/\r\n/g, '\n').trim()
+    const untouched = code.trim() === '' || Object.values(EXAMPLES).some((list) => list.some((e) => same(e.code, code)))
     setLanguage(next)
-    setCode(defaultProgram(next))
+    if (untouched) setCode(defaultProgram(next))
+    setLanguageHint(null)
     setTrace(null)
     setRunError(null)
     clearWhy()
@@ -277,6 +294,7 @@ export default function App() {
               marks={marks}
               onChange={(value) => {
                 setCode(value)
+                setLanguageHint(null)
                 if (trace) setStale(true)
               }}
             />
@@ -295,6 +313,25 @@ export default function App() {
         </div>
 
         <aside className="right" aria-label="Program state">
+          {languageHint && (
+            <div className="panel notice" role="alert">
+              <p>
+                This looks like {LABEL[languageHint]} code, but the language is set to {LABEL[language]}.
+                Running it as {LABEL[language]} would only give a confusing error.
+              </p>
+              <div className="notice-actions">
+                <button type="button" className="run" onClick={() => {
+                  setLanguage(languageHint)
+                  run({ as: languageHint })
+                }}>
+                  Switch to {LABEL[languageHint]} and run
+                </button>
+                <button type="button" className="quiet" onClick={() => run({ as: language })}>
+                  Run as {LABEL[language]} anyway
+                </button>
+              </div>
+            </div>
+          )}
           {inputHint && (
             <div className="panel notice" role="alert">
               <p>
@@ -302,7 +339,9 @@ export default function App() {
                 one value per line. For a menu, give each choice followed by the values it asks for, and end
                 with the exit choice (for example: 1, 50, 1, 30, 4, 7).
               </p>
-              <button type="button" className="quiet run-anyway" onClick={() => run(true)}>Run without input</button>
+              <button type="button" className="quiet run-anyway" onClick={() => run({ as: language, withoutInput: true })}>
+                Run without input
+              </button>
             </div>
           )}
           {runError && <p className="panel error-text" role="alert">{runError}</p>}

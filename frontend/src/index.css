@@ -359,3 +359,5 @@ button.out-line:hover::after { content: 'Why?'; color: var(--ink); font-family: 
 .memory-edge-label { font-family: var(--font); font-size: 10px; fill: var(--graphite-2); }
 .memory-list { margin-top: 8px; font-size: 0.875rem; }
 .memory-list summary { cursor: pointer; color: var(--graphite-2); }
+.notice-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.notice p { max-width: 60ch; }
